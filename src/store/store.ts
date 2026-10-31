@@ -5,27 +5,50 @@ import type { Asset, Distribution, Fundamentals, Macro, Settings, Snapshot, Sync
 import { defaultMacro, defaultSettings, seedAssets } from '../domain/seed';
 import { todayISO, uid } from '../domain/util';
 
-// IndexedDB (fallback em localStorage quando indisponível)
+// IndexedDB (fallback em localStorage; sem nenhum dos dois, como em janela privada restrita, segue só em memória)
+const ls = {
+  get: (k: string) => {
+    try {
+      return globalThis.localStorage?.getItem(k) ?? null;
+    } catch {
+      return null;
+    }
+  },
+  set: (k: string, v: string) => {
+    try {
+      globalThis.localStorage?.setItem(k, v);
+    } catch {
+      /* indisponível */
+    }
+  },
+  del: (k: string) => {
+    try {
+      globalThis.localStorage?.removeItem(k);
+    } catch {
+      /* indisponível */
+    }
+  },
+};
 const storage: StateStorage = {
   getItem: async (k) => {
     try {
       return (await idbGet(k)) ?? null;
     } catch {
-      return localStorage.getItem(k);
+      return ls.get(k);
     }
   },
   setItem: async (k, v) => {
     try {
       await idbSet(k, v);
     } catch {
-      localStorage.setItem(k, v);
+      ls.set(k, v);
     }
   },
   removeItem: async (k) => {
     try {
       await idbDel(k);
     } catch {
-      localStorage.removeItem(k);
+      ls.del(k);
     }
   },
 };
