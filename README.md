@@ -5,7 +5,24 @@ Responde rapidamente: quanto tenho investido, quanto recebo por mês, o que est�
 
 > Ferramenta de apoio à decisão. Não é recomendação de investimento e **não executa operações**.
 
-## Como rodar
+## Acesso
+
+**https://aj8067910-dotcom.github.io/invest/** — publicado automaticamente a cada atualização do código (GitHub Actions → branch `gh-pages`). No celular, use “Adicionar à tela de início” para abrir como app.
+
+## Banco de dados na nuvem (cadastre uma vez, use em qualquer aparelho)
+
+Em **Dados & integrações → Banco de dados na nuvem**:
+1. Crie um token do GitHub com apenas a permissão `gist` (o link está na tela) e escolha uma senha de criptografia.
+2. Clique em **Ativar sincronização**. Os dados deste aparelho vão para um gist **secreto** da sua conta, **criptografados no navegador** (AES-GCM 256 com chave derivada da senha por PBKDF2). O GitHub só guarda texto cifrado.
+3. Em cada outro aparelho, informe o mesmo token e a mesma senha: os dados aparecem.
+
+A partir daí cada alteração é salva na nuvem ~3 s depois, e ao abrir o Radar (ou voltar à aba) ele busca o que mudou em outro aparelho. Se dois aparelhos alterarem ao mesmo tempo, o sistema pergunta qual versão manter em vez de sobrescrever. O token da brapi.dev e todos os parâmetros vão junto. Token do GitHub e senha ficam só no aparelho; **guarde a senha** — sem ela a cópia na nuvem não pode ser lida.
+
+## Importar operações da B3
+
+Em **Histórico → Importar CSV/Excel**, envie o extrato baixado da [Área do Investidor da B3](https://www.investidor.b3.com.br) (Extratos → **Movimentação** ou **Negociação** → Excel). O formato é detectado automaticamente: compras, vendas, dividendos, JCP, rendimentos, amortizações e Tesouro Direto são lançados de uma vez, ligados aos ativos já cadastrados (ativos novos são criados). Linhas repetidas são ignoradas, então reimportar o extrato do mês não duplica nada.
+
+## Como rodar localmente
 
 ```bash
 npm install
@@ -59,7 +76,7 @@ Todo número mostra sua natureza: `REAL` (fonte + data), `MANUAL`, `ESTIMATIVA`,
 | Tesouro Direto | PU e taxa | Manual + link oficial |
 | CVM (RAD/Fundos.NET), RI, gestores | Fatos relevantes, resultados, indicadores | Manual + links |
 
-**Persistência:** IndexedDB do navegador (com pedido de armazenamento persistente). Faça backups em *Dados & integrações → Baixar backup (JSON)*; a restauração aceita o mesmo arquivo.
+**Persistência:** IndexedDB do navegador como cópia local + sincronização criptografada em gist secreto (opcional, recomendada). Backup JSON manual continua disponível em *Dados & integrações*.
 
 ## Arquitetura
 
@@ -69,7 +86,7 @@ src/
     types.ts  seed.ts  util.ts  format.ts
     calc/  positions · dividends · bazin · scoring · allocator · allocation
            concentration · thesis · valuation · projection  (+ engine.test.ts)
-  services/          brapi · bcb · coingecko · sync · io (CSV/Excel/JSON)
+  services/          brapi · bcb · coingecko · sync · io (CSV/Excel/B3/JSON) · cloudsync (nuvem criptografada)
   store/             estado persistente (zustand + IndexedDB) e dados derivados
   components/        UI base, régua em escada, formulários
   pages/             uma tela por módulo

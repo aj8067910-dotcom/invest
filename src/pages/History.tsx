@@ -198,14 +198,16 @@ export default function History() {
           <Empty>Nenhuma operação com estes filtros.</Empty>
         )}
         <p className="muted" style={{ fontSize: 12 }}>
-          Formato de importação: colunas <span className="mono">Data; Tipo; Ticker; Quantidade; Preco; Taxas; Valor; Reinvestimento; Observacao</span>. Tipos aceitos: compra, venda, dividendo, jcp, rendimento, juros, amortizacao, aporte, retirada. Datas em dd/mm/aaaa ou aaaa-mm-dd. Duplicatas são ignoradas.
+          Aceita o <b>extrato de Movimentação</b> ou de <b>Negociação</b> da Área do Investidor da B3 (investidor.b3.com.br → Extratos → Movimentação → baixar Excel), detectados automaticamente. Formato próprio: colunas <span className="mono">Data; Tipo; Ticker; Quantidade; Preco; Taxas; Valor; Reinvestimento; Observacao</span>. Tipos aceitos: compra, venda, dividendo, jcp, rendimento, juros, amortizacao, aporte, retirada. Datas em dd/mm/aaaa ou aaaa-mm-dd. Duplicatas são ignoradas.
         </p>
       </Card>
 
       <Modal open={!!preview} onClose={() => setPreview(null)} title="Pré-visualização da importação" wide>
         {preview && (
           <div className="stack">
+            {preview.format && <div className="note">Formato reconhecido: <b>{preview.format}</b>.</div>}
             <p>{preview.txs.length} operações válidas · {preview.newAssets.length} ativos novos ({preview.newAssets.map((a) => a.ticker).join(', ') || 'nenhum'}) · {preview.errors.length} erros.</p>
+            {!!preview.ignored?.length && <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Ignorados por não afetarem preço médio nem renda: {preview.ignored.join(', ')}.</p>}
             {preview.errors.length > 0 && <div className="note warn" style={{ maxHeight: 140, overflowY: 'auto' }}>{preview.errors.slice(0, 30).map((e, i) => <div key={i}>{e}</div>)}</div>}
             <div className="tbl-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
               <table className="tbl">

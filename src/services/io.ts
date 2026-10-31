@@ -98,7 +98,7 @@ export async function readSheet(file: File): Promise<Record<string, unknown>[]> 
   const buf = await file.arrayBuffer();
   const isCsv = /\.csv$/i.test(file.name);
   const wb = isCsv ? XLSX.read(new TextDecoder('utf-8').decode(buf), { type: 'string', raw: true }) : XLSX.read(buf, { type: 'array', cellDates: true });
-  const ws = wb.Sheets[wb.SheetNames.find((n) => /trans|hist|mov/i.test(n)) || wb.SheetNames[0]];
+  const ws = wb.Sheets[wb.SheetNames.find((n) => /trans|hist|mov|negoc/i.test(n)) || wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, { defval: '', raw: !isCsv });
 }
 
@@ -129,9 +129,112 @@ export interface ImportResult {
   txs: Omit<Transaction, 'id'>[];
   newAssets: Asset[];
   errors: string[];
+  format?: string;
+  ignored?: string[];
+}
+
+const hasCols = (row: Record<string, unknown> | undefined, ...cols: string[]) => {
+  if (!row) return false;
+  const keys = new Set(Object.keys(row).map((k) => norm(k).replace(/[^a-z]/g, '')));
+  return cols.every((c) => keys.has(c));
+};
+
+/** Ticker do mercado fracionário (ITUB4F) → ticker padrão (ITUB4). */
+const cleanTicker = (t: string) => {
+  const u = t.toUpperCase().trim();
+  return /^[A-Z]{4}\d{1,2}F$/.test(u) ? u.slice(0, -1) : u;
+};
+
+/**
+ * Extratos da Área do Investidor da B3 (investidor.b3.com.br):
+ * - "Movimentação": Entrada/Saída, Data, Movimentação, Produto, Instituição, Quantidade, Preço unitário, Valor da Operação
+ * - "Negociação": Data do Negócio, Tipo de Movimentação, Mercado, Prazo/Vencimento, Instituição, Código de Negociação, Quantidade, Preço, Valor
+ */
+function parseB3(rows: Record<string, unknown>[], assets: Asset[], kind: 'mov' | 'neg'): ImportResult {
+  const byTicker = new Map(assets.map((a) => [a.ticker.toUpperCase(), a]));
+  const byName = new Map(assets.map((a) => [norm(a.name), a]));
+  const txs: Omit<Transaction, 'id'>[] = [];
+  const newAssets: Asset[] = [];
+  const errors: string[] = [];
+  const ignored = new Map<string, number>();
+  const resolve = (produto: string): Asset => {
+    const raw = produto.trim();
+    const code = cleanTicker(raw.split(' - ')[0].trim());
+    let a = byName.get(norm(raw)) || byTicker.get(code);
+    if (!a && /^tesouro/i.test(raw)) a = assets.find((x) => x.class === 'tesouro' && norm(raw).includes(norm(x.name)));
+    if (!a) {
+      const isTd = /^tesouro/i.test(raw);
+      a = makeAsset({
+        ticker: isTd ? raw.replace(/tesouro\s*/i, 'TD-').replace(/\s+/g, '').toUpperCase().slice(0, 20) : code,
+        name: isTd ? raw : raw.split(' - ')[1]?.trim() || code,
+        class: isTd ? 'tesouro' : guessClass(code),
+        status: 'carteira',
+        notes: 'Criado na importação do extrato da B3: revisar classe, setor e emissor.',
+        ...(isTd ? { fixed: { indexer: /ipca/i.test(raw) ? 'IPCA+' : /selic/i.test(raw) ? 'Selic' : 'Prefixado', maturity: '', contractedRate: null, marketRate: null, marketRateDate: null, coupons: /juros/i.test(raw) } } : {}),
+      } as any);
+      byTicker.set(a.ticker, a);
+      byName.set(norm(raw), a);
+      newAssets.push(a);
+    }
+    return a;
+  };
+  rows.forEach((row, i) => {
+    const line = i + 2;
+    if (kind === 'neg') {
+      const date = parseDate(pick(row, 'datadonegocio', 'data'));
+      const tipo = norm(pick(row, 'tipodemovimentacao'));
+      const code = String(pick(row, 'codigodenegociacao') ?? '');
+      const qty = parseNum(pick(row, 'quantidade'));
+      const price = parseNum(pick(row, 'preco'));
+      const value = parseNum(pick(row, 'valor'));
+      if (!date || !code || !qty) return errors.push(`Linha ${line}: dados incompletos.`);
+      const type: TxType | null = tipo.startsWith('compra') ? 'compra' : tipo.startsWith('venda') ? 'venda' : null;
+      if (!type) return ignored.set(tipo || '—', (ignored.get(tipo || '—') || 0) + 1);
+      const a = resolve(code);
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, price, fees: 0, amount: Math.abs(value ?? qty * (price ?? 0)), notes: 'Extrato B3 (negociação)' });
+      return;
+    }
+    const date = parseDate(pick(row, 'data'));
+    const dir = norm(pick(row, 'entradasaida'));
+    const mov = norm(pick(row, 'movimentacao'));
+    const produto = String(pick(row, 'produto') ?? '');
+    const qty = parseNum(pick(row, 'quantidade'));
+    const price = parseNum(pick(row, 'precounitario'));
+    const value = parseNum(pick(row, 'valordaoperacao'));
+    if (!date || !produto) return errors.push(`Linha ${line}: data ou produto ausente.`);
+    const credit = dir.startsWith('credito');
+    let type: TxType | null = null;
+    if (mov.includes('liquidacao') || mov === 'compra' || mov === 'venda') type = credit ? 'compra' : 'venda';
+    else if (mov.startsWith('vencimento') || mov.startsWith('resgate')) type = 'venda';
+    else if (credit && mov.includes('juros sobre capital')) type = 'jcp';
+    else if (credit && mov.includes('dividendo')) type = 'dividendo';
+    else if (credit && mov.includes('rendimento')) type = 'rendimento';
+    else if (credit && mov.includes('amortizacao')) type = 'amortizacao';
+    else if (credit && (mov === 'juros' || mov.startsWith('pagamento de juros') || mov.includes('cupom'))) type = 'juros';
+    if (!type) return ignored.set(mov || '—', (ignored.get(mov || '—') || 0) + 1);
+    const a = resolve(produto);
+    if (type === 'compra' || type === 'venda') {
+      if (!qty) return errors.push(`Linha ${line}: quantidade ausente.`);
+      const amount = value ?? (price !== null ? qty * price : null);
+      if (amount === null) return errors.push(`Linha ${line}: ${produto} sem preço/valor no extrato; lance esta operação manualmente.`);
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, price: price ?? amount / qty, fees: 0, amount: Math.abs(amount), notes: 'Extrato B3 (movimentação)' });
+    } else {
+      if (!value) return errors.push(`Linha ${line}: provento sem valor.`);
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, amount: Math.abs(value), notes: 'Extrato B3 (movimentação)' });
+    }
+  });
+  return {
+    txs: txs.sort((x, y) => x.date.localeCompare(y.date)),
+    newAssets,
+    errors,
+    format: kind === 'mov' ? 'Extrato de Movimentação da B3' : 'Extrato de Negociação da B3',
+    ignored: [...ignored.entries()].map(([k, n]) => `${k} (${n})`),
+  };
 }
 
 export function parseTransactions(rows: Record<string, unknown>[], assets: Asset[]): ImportResult {
+  if (hasCols(rows[0], 'entradasaida', 'movimentacao', 'produto')) return parseB3(rows, assets, 'mov');
+  if (hasCols(rows[0], 'codigodenegociacao', 'tipodemovimentacao')) return parseB3(rows, assets, 'neg');
   const byTicker = new Map(assets.map((a) => [a.ticker.toUpperCase(), a]));
   const txs: Omit<Transaction, 'id'>[] = [];
   const newAssets: Asset[] = [];

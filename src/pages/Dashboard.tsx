@@ -48,10 +48,13 @@ export default function Dashboard() {
         <Card title="Primeiros passos" className="hl">
           <ol style={{ margin: 0, paddingLeft: 18, color: 'var(--muted)' }}>
             <li>
-              Em <Link to="/dados">Dados & integrações</Link>, cadastre seu token gratuito da brapi.dev e clique em <b>Atualizar dados</b> (cotações e proventos da B3).
+              Em <Link to="/dados">Dados & integrações</Link>, ative o <b>banco de dados na nuvem</b> para usar os mesmos dados em qualquer aparelho. Se já ativou em outro aparelho, informe o mesmo token e senha: tudo aparece aqui.
             </li>
             <li>
-              Registre suas compras e proventos recebidos em <Link to="/historico">Histórico</Link> — ou importe CSV/Excel da Rico. Preço médio e quantidade são calculados automaticamente.
+              Ainda lá, cadastre seu token gratuito da brapi.dev e clique em <b>Atualizar dados</b> (cotações e proventos da B3).
+            </li>
+            <li>
+              Importe o extrato de movimentação da <b>Área do Investidor da B3</b> em <Link to="/historico">Histórico</Link> (compras, vendas e proventos de uma vez) ou registre manualmente. Preço médio e quantidade são calculados automaticamente.
             </li>
             <li>
               Preencha fundamentos na ficha de cada ativo (ROE, payout, vacância…). Sem eles o ranking limita a classificação a “Monitoramento”.

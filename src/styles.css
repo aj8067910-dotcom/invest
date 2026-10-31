@@ -261,3 +261,12 @@ ul.reasons li { margin: 2px 0; }
   .stat-v { font-size: 18px; }
   .page-h h1 { font-size: 19px; }
 }
+.cloud { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--sans); color: var(--muted); padding: 4px 9px; border: 1px solid var(--line2); border-radius: 999px; white-space: nowrap; }
+.cloud:hover { text-decoration: none; color: var(--text); }
+.cloud-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.c-ok .cloud-dot { background: var(--pos); box-shadow: 0 0 8px var(--pos); }
+.c-syncing .cloud-dot { background: var(--accent); }
+.c-error .cloud-dot, .c-conflict .cloud-dot { background: var(--neg); }
+.c-error, .c-conflict { color: var(--neg); border-color: rgba(240,82,95,.45); }
+.c-off { color: var(--warn); border-color: rgba(245,184,61,.4); }
+@media (max-width: 600px) { .cloud { font-size: 0; gap: 0; padding: 6px; } }

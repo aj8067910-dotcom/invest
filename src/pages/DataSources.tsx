@@ -8,6 +8,7 @@ import { syncMacro, syncQuotes } from '../services/sync';
 import { download } from '../services/io';
 import { todayISO } from '../domain/util';
 import { toast } from '../components/toast';
+import { CloudCard } from '../components/CloudCard';
 
 const SOURCES: { name: string; what: string; status: 'auto' | 'manual'; url: string }[] = [
   { name: 'brapi.dev (dados da B3)', what: 'Cotações de ações, FIIs e ETFs; histórico de proventos (dividendos, JCP, rendimentos)', status: 'auto', url: 'https://brapi.dev' },
@@ -45,8 +46,9 @@ export default function DataSources() {
           <p>Todo dado exibe sua origem e data. O sistema nunca inventa cotações, proventos ou indicadores: sem integração disponível, o campo fica marcado como <DataTag kind="ausente" /> e aceita preenchimento manual <DataTag kind="manual" />.</p>
         </div>
       </div>
+      <CloudCard />
       <div className="grid g2">
-        <Card title="brapi.dev — token de acesso" sub="Gratuito em brapi.dev. Sem token, só alguns tickers retornam (ex.: PETR4, VALE3, ITUB4). O token fica salvo apenas neste navegador.">
+        <Card title="brapi.dev — token de acesso" sub="Gratuito em brapi.dev. Sem token, só alguns tickers retornam (ex.: PETR4, VALE3, ITUB4). Com a nuvem ativa, o token vai junto (criptografado) para os outros aparelhos.">
           <div className="row">
             <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="cole seu token" style={{ flex: 1 }} />
             <button className="btn" onClick={() => { updateSettings((s) => ({ ...s, integrations: { ...s.integrations, brapiToken: token.trim() } })); toast('Token salvo.'); }}>Salvar</button>
@@ -113,7 +115,7 @@ export default function DataSources() {
       </Card>
 
       <div className="grid g2">
-        <Card title="Backup e restauração" sub="Os dados ficam no IndexedDB deste navegador. Exporte backups regularmente.">
+        <Card title="Backup e restauração" sub="Cópia local extra. Com a nuvem ativa, o backup JSON é opcional.">
           <div className="row">
             <button className="btn primary" onClick={() => download(`radar-backup-${todayISO()}.json`, JSON.stringify(makeBackup(), null, 2), 'application/json')}>Baixar backup completo (JSON)</button>
             <input ref={fileRef} type="file" accept=".json" hidden onChange={async (e) => {

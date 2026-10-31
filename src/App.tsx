@@ -4,9 +4,11 @@ import { useStore } from './store/store';
 import { useDerived } from './store/derived';
 import { Icon, RadarLogo } from './components/icons';
 import { Toast, toast } from './components/toast';
+import { ConflictModal } from './components/CloudCard';
 import { dateBR, num } from './domain/format';
 import { todayISO } from './domain/util';
 import { syncMacro, syncQuotes } from './services/sync';
+import { startAutoSync, useCloud } from './services/cloudsync';
 import Dashboard from './pages/Dashboard';
 import Assets from './pages/Assets';
 import AssetDetail from './pages/AssetDetail';
@@ -61,6 +63,12 @@ export default function App() {
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
 
+  // sincronização em nuvem: só depois de carregar os dados locais
+  useEffect(() => {
+    if (hydrated) startAutoSync();
+  }, [hydrated]);
+  const cloud = useCloud();
+
   // registra a evolução patrimonial diária (base do gráfico de evolução desde dez/2025)
   useEffect(() => {
     if (!hydrated || d.totals.marketValue <= 0) return;
@@ -114,7 +122,7 @@ export default function App() {
         <div className="side-foot">
           Desde {dateBR(d.settings.profile.startDate)} · {d.settings.profile.broker}
           <br />
-          Dados salvos neste navegador (IndexedDB). Faça backups em Dados & integrações.
+          {cloud.status === 'off' ? 'Dados só neste aparelho. Ative a nuvem em Dados & integrações.' : 'Dados sincronizados na nuvem (criptografados).'}
         </div>
       </aside>
       <div className="main">
@@ -134,6 +142,10 @@ export default function App() {
               Sem cotação<b className={noQuote ? 'warn-t' : ''}>{noQuote}/{d.assets.length}</b>
             </span>
           </div>
+          <NavLink to="/dados" className={`cloud c-${cloud.status}`} title={cloud.message || 'Sincronização em nuvem desativada'}>
+            <span className="cloud-dot" />
+            {{ off: 'Só neste aparelho', syncing: 'Sincronizando…', ok: 'Nuvem ok', error: 'Erro na nuvem', conflict: 'Escolha a versão' }[cloud.status]}
+          </NavLink>
           <button className="btn sm primary" onClick={sync} disabled={!!busy} title="Atualiza cotações (brapi.dev, CoinGecko), proventos e indicadores do Banco Central">
             <Icon name="sync" /> {busy || 'Atualizar dados'}
           </button>
@@ -157,6 +169,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <ConflictModal />
       <Toast />
     </div>
   );
