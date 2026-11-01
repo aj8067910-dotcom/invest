@@ -9,12 +9,14 @@ import { download } from '../services/io';
 import { todayISO } from '../domain/util';
 import { toast } from '../components/toast';
 import { CloudCard } from '../components/CloudCard';
+import { RobotCard } from '../components/RobotCard';
 
 const SOURCES: { name: string; what: string; status: 'auto' | 'manual'; url: string }[] = [
-  { name: 'brapi.dev (dados da B3)', what: 'Cotações de ações, FIIs e ETFs; histórico de proventos (dividendos, JCP, rendimentos)', status: 'auto', url: 'https://brapi.dev' },
+  { name: 'Robô diário (GitHub Actions) — Yahoo Finance', what: 'Cotações de ações, FIIs e ETFs da B3, 10 anos de proventos e preço médio anual. Sem token. Roda 3× por dia útil.', status: 'auto', url: 'https://github.com/aj8067910-dotcom/invest/actions' },
+  { name: 'brapi.dev (opcional)', what: 'Só para ativos que você cadastrar e que não estejam na lista do robô (exige token)', status: 'auto', url: 'https://brapi.dev' },
   { name: 'Banco Central — SGS', what: 'Selic meta, IPCA 12m, CDI, dólar PTAX', status: 'auto', url: 'https://www3.bcb.gov.br/sgspub' },
   { name: 'CoinGecko', what: 'Preço de BTC e USDC em reais', status: 'auto', url: 'https://www.coingecko.com' },
-  { name: 'Tesouro Nacional / Tesouro Direto', what: 'PU e taxas dos títulos (sem API aberta para navegador: preenchimento manual)', status: 'manual', url: 'https://www.tesourodireto.com.br/titulos/precos-e-taxas.htm' },
+  { name: 'Tesouro Transparente (Tesouro Nacional)', what: 'PU e taxas oficiais dos títulos do Tesouro Direto, coletados pelo robô', status: 'auto', url: 'https://www.tesourotransparente.gov.br/ckan/dataset/taxas-dos-titulos-ofertados-pelo-tesouro-direto' },
   { name: 'CVM — RAD / Fundos.NET', what: 'Fatos relevantes, ITR/DFP, informes de FIIs (consulta e registro manual)', status: 'manual', url: 'https://www.rad.cvm.gov.br/ENET/frmConsultaExternaCVM.aspx' },
   { name: 'Relações com Investidores / gestores', what: 'Releases, relatórios gerenciais, vacância, inadimplência, payout', status: 'manual', url: 'https://fnet.bmfbovespa.com.br/fnet/publico/abrirGerenciadorDocumentosCVM' },
 ];
@@ -47,8 +49,9 @@ export default function DataSources() {
         </div>
       </div>
       <CloudCard />
+      <RobotCard />
       <div className="grid g2">
-        <Card title="brapi.dev — token de acesso" sub="Gratuito em brapi.dev. Sem token, só alguns tickers retornam (ex.: PETR4, VALE3, ITUB4). Com a nuvem ativa, o token vai junto (criptografado) para os outros aparelhos.">
+        <Card title="brapi.dev — token opcional" sub="Não é necessário para os ativos cadastrados: eles vêm do robô diário. O token só serve para ativos novos que você adicionar e que não estejam na lista do robô. Com a nuvem ativa, o token vai junto (criptografado) para os outros aparelhos.">
           <div className="row">
             <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="cole seu token" style={{ flex: 1 }} />
             <button className="btn" onClick={() => { updateSettings((s) => ({ ...s, integrations: { ...s.integrations, brapiToken: token.trim() } })); toast('Token salvo.'); }}>Salvar</button>

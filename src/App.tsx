@@ -9,6 +9,7 @@ import { dateBR, num } from './domain/format';
 import { todayISO } from './domain/util';
 import { syncMacro, syncQuotes } from './services/sync';
 import { startAutoSync, useCloud } from './services/cloudsync';
+import { applyMarketData } from './services/marketdata';
 import Dashboard from './pages/Dashboard';
 import Assets from './pages/Assets';
 import AssetDetail from './pages/AssetDetail';
@@ -64,8 +65,10 @@ export default function App() {
   useEffect(() => setOpen(false), [loc.pathname]);
 
   // sincronização em nuvem: só depois de carregar os dados locais
+  // ao abrir: primeiro traz os dados da nuvem, depois aplica as cotações e proventos do robô diário
   useEffect(() => {
-    if (hydrated) startAutoSync();
+    if (!hydrated) return;
+    startAutoSync().then(() => applyMarketData());
   }, [hydrated]);
   const cloud = useCloud();
 
@@ -79,11 +82,11 @@ export default function App() {
     setBusy('Atualizando…');
     try {
       const [q] = await Promise.all([syncQuotes({ onProgress: setBusy }), syncMacro()]);
-      toast(
-        `${q.ok.length} cotações atualizadas, ${q.dividendsAdded} proventos novos.` +
-          (q.failed.length ? ` ${q.failed.length} sem dado (${q.failed.slice(0, 6).map((f) => f.ticker).join(', ')}${q.failed.length > 6 ? '…' : ''}) — veja Dados & integrações.` : ''),
-        q.failed.length > 0 && q.ok.length === 0,
-      );
+      const parts = [`${q.ok.length} ativos atualizados`];
+      if (q.robot?.generatedAt) parts.push(`dados do robô de ${new Date(q.robot.generatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
+      if (q.needToken.length) parts.push(`${q.needToken.length} fora do robô precisam do token da brapi (${q.needToken.slice(0, 5).join(', ')}${q.needToken.length > 5 ? '…' : ''})`);
+      if (q.failed.length) parts.push(`${q.failed.length} falharam — veja Dados & integrações`);
+      toast(parts.join(' · ') + '.', q.ok.length === 0);
     } catch (e: any) {
       toast('Falha na atualização: ' + (e?.message || e), true);
     } finally {

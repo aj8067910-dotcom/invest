@@ -267,13 +267,14 @@ export async function push(force = false): Promise<void> {
 
 /** Liga a sincronização automática: baixa ao abrir/voltar à aba e envia 3 s após cada alteração. */
 let started = false;
-export function startAutoSync() {
-  if (started) return;
+export function startAutoSync(): Promise<void> {
+  if (started) return Promise.resolve();
   started = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let first: Promise<void> = Promise.resolve();
   if (loadConfig()) {
     useCloud.getState().set({ status: 'syncing', message: 'Conectando…' });
-    pull();
+    first = pull();
   }
   useStore.subscribe((s, prev) => {
     if (!s.hydrated || !loadConfig()) return;
@@ -285,4 +286,5 @@ export function startAutoSync() {
     if (document.visibilityState === 'visible' && loadConfig()) pull();
     if (document.visibilityState === 'hidden' && loadConfig()) push();
   });
+  return first;
 }

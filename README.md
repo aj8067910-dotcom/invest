@@ -9,6 +9,15 @@ Responde rapidamente: quanto tenho investido, quanto recebo por mês, o que est�
 
 **https://aj8067910-dotcom.github.io/invest/** — publicado automaticamente a cada atualização do código (GitHub Actions → branch `gh-pages`). No celular, use “Adicionar à tela de início” para abrir como app.
 
+## Dados de mercado automáticos (sem token)
+
+Um robô no GitHub Actions (`scripts/fetch-market.mjs`) roda 4× por dia útil e aos sábados e publica `market-data.json` junto com o site:
+- cotações de ações, FIIs e ETFs da B3 e 10 anos de proventos por unidade e preço médio anual (Yahoo Finance);
+- PU e taxa dos títulos do Tesouro Direto (arquivo oficial do Tesouro Transparente);
+- Selic, IPCA 12m, CDI e dólar PTAX (Banco Central — SGS); BTC e USDC (CoinGecko).
+
+Ao abrir o Radar esses dados são aplicados automaticamente, sem apagar o que você editou (cotação manual mais recente, marcações de extraordinário, proventos lançados à mão). A lista de ativos coletados fica em `market/tickers.json`; ativos fora dela usam a brapi.dev (token opcional) ou cotação manual.
+
 ## Banco de dados na nuvem (cadastre uma vez, use em qualquer aparelho)
 
 Em **Dados & integrações → Banco de dados na nuvem**:
@@ -70,10 +79,11 @@ Todo número mostra sua natureza: `REAL` (fonte + data), `MANUAL`, `ESTIMATIVA`,
 
 | Fonte | Uso | Modo |
 |---|---|---|
-| brapi.dev (dados B3) | Cotações e proventos | Automático (token) |
+| Robô (Yahoo Finance, dados B3) | Cotações, proventos, preço médio anual | Automático, sem token |
+| brapi.dev | Ativos fora da lista do robô | Opcional (token) |
 | Banco Central — SGS | Selic, IPCA 12m, CDI, PTAX | Automático |
 | CoinGecko | BTC, USDC em BRL | Automático |
-| Tesouro Direto | PU e taxa | Manual + link oficial |
+| Tesouro Transparente | PU e taxa do Tesouro Direto | Automático (robô) |
 | CVM (RAD/Fundos.NET), RI, gestores | Fatos relevantes, resultados, indicadores | Manual + links |
 
 **Persistência:** IndexedDB do navegador como cópia local + sincronização criptografada em gist secreto (opcional, recomendada). Backup JSON manual continua disponível em *Dados & integrações*.

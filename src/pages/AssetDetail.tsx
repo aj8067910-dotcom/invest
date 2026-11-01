@@ -558,7 +558,7 @@ function ClassMetrics({ a }: { a: Asset }) {
           <Stat label="Taxa atual de compra" value={isNum(fx.marketRate) ? `${fx.indexer} ${num(fx.marketRate, 2)}%` : '—'} tag={<DataTag kind={isNum(fx.marketRate) ? 'manual' : 'ausente'} date={fx.marketRateDate} />} sub={`referência de atratividade ${d.settings.scoring.goodRealRate}%`} />
         </div>
         <div className="grid g2">
-          <Card title="Atualizar taxa atual" sub="O Tesouro Direto não disponibiliza API aberta para navegador; consulte o site oficial e registre aqui.">
+          <Card title="Taxa atual" sub="Atualizada automaticamente pelo robô com o arquivo oficial do Tesouro. Você pode corrigir manualmente.">
             <div className="form-grid">
               <Field label="Taxa atual (% a.a.)"><NumInput value={fx.marketRate} suffix="%" onChange={(v) => update(a.id, { fixed: { ...fx, marketRate: v, marketRateDate: todayISO() } })} /></Field>
               <Field label="PU atual">

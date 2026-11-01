@@ -3,14 +3,20 @@ name: Publicar no GitHub Pages
 on:
   push:
     branches: [claude/festive-cannon-p7n4ye, main]
+  schedule:
+    # dias úteis, 10h15, 13h15, 16h15 e 19h15 (horário de Brasília) — coleta de dados de mercado
+    - cron: '15 13,16,19,22 * * 1-5'
+    # sábado: atualiza Tesouro/indicadores do fechamento da semana
+    - cron: '40 12 * * 6'
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -23,6 +29,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Coletar dados de mercado (cotações, proventos, Tesouro, Banco Central)
+        run: node scripts/fetch-market.mjs
+        continue-on-error: true
       - run: npm run build
       - name: Publicar dist/ no branch gh-pages
         uses: peaceiris/actions-gh-pages@v4
@@ -32,3 +41,6 @@ jobs:
           publish_branch: gh-pages
           force_orphan: true
           commit_message: 'Publicação automática'
+      # o GitHub desativa agendamentos após 60 dias sem atividade no repositório; isto os mantém ativos
+      - uses: liskin/gh-workflow-keepalive@v1
+        if: github.event_name == 'schedule'

@@ -134,15 +134,25 @@ export function paymentFrequency(asset: Asset, asOf = todayISO()): { perYear: nu
   return { perYear, label };
 }
 
-/** Sugere marcação de extraordinário: valor > 2,5× a mediana dos demais pagamentos recentes. */
+/**
+ * Sugere marcação de extraordinário. Um pagamento é atípico quando é bem maior (> 2,5×) que a
+ * mediana dos pagamentos dos 3 anos ao redor E não tem um equivalente (mesma ordem de grandeza)
+ * na mesma época do ano anterior ou seguinte. Assim, JCP complementares semestrais ou anuais que
+ * se repetem todo ano continuam recorrentes; um dividendo pontual vira extraordinário.
+ */
 export function suspectExtraordinary(asset: Asset): Set<string> {
   const out = new Set<string>();
-  const ds = asset.distributions.filter((d) => d.type !== 'amortizacao');
-  for (const d of ds) {
-    const others = ds.filter((o) => o.id !== d.id && Math.abs(new Date(o.exDate).getTime() - new Date(d.exDate).getTime()) < 3 * 365 * 86400000);
+  const DAY = 86400000;
+  const ds = asset.distributions.filter((d) => d.type !== 'amortizacao').map((d) => ({ d, t: new Date(d.exDate + 'T12:00:00').getTime() }));
+  for (const { d, t } of ds) {
+    const others = ds.filter((o) => o.d.id !== d.id && Math.abs(o.t - t) < 3 * 365 * DAY);
     if (others.length < 3) continue;
-    const m = median(others.map((o) => o.value));
-    if (m > 0 && d.value > 2.5 * m) out.add(d.id);
+    const m = median(others.map((o) => o.d.value));
+    if (!(m > 0 && d.value > 2.5 * m)) continue;
+    const repeats = ds.some(
+      (o) => o.d.id !== d.id && Math.abs(Math.abs(o.t - t) - 365 * DAY) <= 75 * DAY && o.d.value >= d.value / 2.5 && o.d.value <= d.value * 2.5,
+    );
+    if (!repeats) out.add(d.id);
   }
   return out;
 }

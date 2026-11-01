@@ -3,11 +3,14 @@ import { fetchBrapi } from './brapi';
 import { fetchCryptoBRL } from './coingecko';
 import { fetchSgsLast, SGS } from './bcb';
 import { suspectExtraordinary } from '../domain/calc/dividends';
+import { applyMarketData, type MarketReport } from './marketdata';
 
 export interface SyncReport {
   ok: string[];
   failed: { ticker: string; error: string }[];
   dividendsAdded: number;
+  robot?: MarketReport;
+  needToken: string[]; // ativos fora do robô que precisam do token da brapi
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -15,15 +18,25 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function syncQuotes(opts: { ids?: string[]; withDividends?: boolean; onProgress?: (msg: string) => void } = {}): Promise<SyncReport> {
   const st = useStore.getState();
   const token = st.settings.integrations.brapiToken.trim();
-  const report: SyncReport = { ok: [], failed: [], dividendsAdded: 0 };
-  const targets = st.assets.filter((a) => (!opts.ids || opts.ids.includes(a.id)) && a.class !== 'tesouro');
+  const report: SyncReport = { ok: [], failed: [], dividendsAdded: 0, needToken: [] };
+  // 1) dados do robô diário (sem token): cotações, proventos, Tesouro e Banco Central
+  opts.onProgress?.('Dados do robô diário…');
+  const robot = await applyMarketData();
+  report.robot = robot;
+  report.dividendsAdded += robot.dividendsChanged;
+  const all = useStore.getState().assets.filter((a) => !opts.ids || opts.ids.includes(a.id));
+  for (const a of all) if (robot.covered.has(a.id)) report.ok.push(a.ticker);
+  // 2) ativos fora do robô: brapi.dev (exige token, exceto PETR4, VALE3, ITUB4 e MGLU3)
+  const FREE = ['PETR4', 'VALE3', 'ITUB4', 'MGLU3'];
+  const targets = all.filter((a) => a.class !== 'tesouro' && !robot.covered.has(a.id));
+  for (const a of targets.filter((x) => x.class !== 'cripto' && !token && !FREE.includes(x.ticker))) report.needToken.push(a.ticker);
 
-  for (const a of targets.filter((x) => x.class !== 'cripto')) {
+  for (const a of targets.filter((x) => x.class !== 'cripto' && (token || FREE.includes(x.ticker)))) {
     opts.onProgress?.(`brapi.dev: ${a.ticker}…`);
     try {
       const q = await fetchBrapi(a.ticker, token);
       useStore.getState().setQuote(a.id, q.price, q.time, 'brapi.dev (B3, com atraso)');
-      if (opts.withDividends !== false && q.distributions.length) {
+      if (opts.withDividends !== false && q.distributions.length && !a.distributions.some((d) => d.source.startsWith('Yahoo'))) {
         const added = useStore.getState().mergeDistributions(a.id, q.distributions);
         report.dividendsAdded += added;
         // sinaliza automaticamente pagamentos atípicos como extraordinários (revisável na ficha)
@@ -60,7 +73,11 @@ export async function syncQuotes(opts: { ids?: string[]; withDividends?: boolean
   useStore.getState().log({
     source: 'Cotações',
     ok: report.failed.length === 0,
-    message: `${report.ok.length} atualizados, ${report.failed.length} falhas, ${report.dividendsAdded} proventos novos.${report.failed.length ? ' Falhas: ' + report.failed.map((f) => `${f.ticker} (${f.error})`).join('; ') : ''}`,
+    message:
+      `${report.ok.length} atualizados, ${report.failed.length} falhas, ${report.dividendsAdded} ativo(s) com proventos atualizados.` +
+      (report.robot?.generatedAt ? ` Robô: dados de ${new Date(report.robot.generatedAt).toLocaleString('pt-BR')}.` : report.robot?.error ? ` Robô indisponível: ${report.robot.error}` : '') +
+      (report.needToken.length ? ` Sem token da brapi: ${report.needToken.join(', ')}.` : '') +
+      (report.failed.length ? ' Falhas: ' + report.failed.map((f) => `${f.ticker} (${f.error})`).join('; ') : ''),
   });
   return report;
 }
