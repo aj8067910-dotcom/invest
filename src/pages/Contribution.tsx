@@ -41,7 +41,7 @@ export default function Contribution() {
     addTransaction({ date, type: 'aporte', amount: amount ?? 0, notes: 'Aporte registrado pela central' });
     for (const l of plan.lines) addTransaction({ date, type: 'compra', assetId: l.asset.id, ticker: l.asset.ticker, qty: l.qty, price: l.price, fees: 0, amount: l.cost, notes: 'Compra registrada pela central de aportes' });
     setConfirm(false);
-    toast(`Registradas ${plan.lines.length} compras e o aporte de ${brl(amount)}. Ajuste preços reais no Histórico, se necessário.`);
+    toast(`Registradas ${plan.lines.length} compras e o aporte de ${brl(amount)}. Ajuste preços reais na Central de Operações, se necessário.`);
   };
 
   return (
@@ -177,7 +177,7 @@ export default function Contribution() {
           <li>Aporte de {brl(amount)} em {date}</li>
           {plan.lines.map((l) => <li key={l.asset.id}>Compra de {qtyFmt(l.qty)} {l.asset.ticker} a {brl(l.price)}</li>)}
         </ul>
-        <p className="muted">Preços e taxas podem ser ajustados depois no Histórico.</p>
+        <p className="muted">Preços e taxas podem ser ajustados depois na Central de Operações.</p>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={() => setConfirm(false)}>Cancelar</button>
           <button className="btn primary" onClick={register}>Registrar</button>

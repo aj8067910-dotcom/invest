@@ -75,7 +75,7 @@ export default function Allocation() {
           <ul className="reasons">
             {alloc.rows.filter((r) => r.status === 'sub').map((r) => <li key={r.cls}>{CLASS_LABEL[r.cls]} está {pct(-r.diff)} abaixo do alvo — candidata a receber aportes, se houver ativo com preço adequado.</li>)}
             {alloc.rows.filter((r) => r.status === 'sobre').map((r) => <li key={r.cls}>{CLASS_LABEL[r.cls]} está {pct(r.diff)} acima do alvo — novos aportes nesta classe recebem peso menor. Não é necessário vender: o rebalanceamento acontece pelos aportes.</li>)}
-            {alloc.total === 0 && <li>Sem posições registradas. Lance compras no Histórico.</li>}
+            {alloc.total === 0 && <li>Sem posições registradas. Lance compras na Central de Operações.</li>}
           </ul>
           <Field label="Tolerância usada" hint="Classes dentro de ±2 p.p. do alvo são consideradas alinhadas.">
             <span className="mono">±2 p.p.</span>

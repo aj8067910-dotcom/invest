@@ -1,6 +1,6 @@
 import type { Asset, AssetClass, Settings } from '../types';
 import { CLASS_ORDER } from '../types';
-import type { Position } from './positions';
+import { isHeld, type Position } from './positions';
 
 export interface ClassAlloc {
   cls: AssetClass;
@@ -24,7 +24,7 @@ export function computeAllocation(assets: Asset[], positions: Record<string, Pos
   const values: Record<AssetClass, number> = { acao: 0, fii: 0, tesouro: 0, etf: 0, cripto: 0 };
   for (const a of assets) {
     const p = positions[a.id];
-    if (p && p.qty > 0) values[a.class] += p.marketValue;
+    if (isHeld(p)) values[a.class] += p.marketValue;
   }
   const total = Object.values(values).reduce((x, y) => x + y, 0);
   const targetSum = CLASS_ORDER.reduce((x, c) => x + (s.targetAllocation[c] || 0), 0);

@@ -11,6 +11,7 @@ import { brl, pct, qtyFmt } from '../domain/format';
 import type { AssetClass, AssetStatus } from '../domain/types';
 import { CLASS_LABEL, CLASS_ORDER } from '../domain/types';
 import { toast } from '../components/toast';
+import { isHeld } from '../domain/calc/positions';
 
 type SortKey = 'ticker' | 'value' | 'weight' | 'dy' | 'ratio' | 'score';
 
@@ -32,7 +33,7 @@ export default function Assets() {
       .map((a) => {
         const p = d.positions[a.id];
         const r = d.scoreById[a.id];
-        return { a, p, r, value: p.qty > 0 ? p.marketValue : 0, weight: p.qty > 0 ? (p.marketValue / total) * 100 : 0 };
+        return { a, p, r, value: isHeld(p) ? p.marketValue : 0, weight: isHeld(p) ? (p.marketValue / total) * 100 : 0 };
       })
       .sort((x, y) => {
         const v = (o: typeof x) =>
@@ -56,7 +57,7 @@ export default function Assets() {
         <div>
           <div className="kicker">Cadastro</div>
           <h1>Carteira & Watchlist</h1>
-          <p>Quantidade e preço médio vêm do Histórico de operações. Clique no ticker para abrir a ficha completa (preço-teto, dividendos, fundamentos e valuation).</p>
+          <p>Quantidade e preço médio vêm da Central de Operações. Clique no ticker para abrir a ficha completa (preço-teto, dividendos, fundamentos e valuation).</p>
         </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ Adicionar ativo</button>
       </div>
@@ -101,7 +102,7 @@ export default function Assets() {
                   <td>
                     <ClassBadge c={a.class} /> <span className="tk-sub" style={{ display: 'inline' }}>{a.sector}</span>
                   </td>
-                  <td className="num">{p.qty > 0 ? qtyFmt(p.qty) : <span className="dim">—</span>}</td>
+                  <td className="num">{p.qty > 0 ? qtyFmt(p.qty) : p.valueOnly ? <span className="dim">por valor</span> : <span className="dim">—</span>}</td>
                   <td className="num">{p.qty > 0 ? brl(p.avgPrice) : '—'}</td>
                   <td><QuoteCell a={a} /></td>
                   <td className="num">{value ? brl(value) : '—'}</td>

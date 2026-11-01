@@ -1,6 +1,6 @@
 import type { Asset, Settings } from '../types';
 import { CLASS_LABEL, FII_TYPE_LABEL } from '../types';
-import type { Position } from './positions';
+import { isHeld as held, type Position } from './positions';
 import type { Alert } from './thesis';
 
 export interface ExposureRow {
@@ -49,7 +49,7 @@ export function exposure(assets: Asset[], positions: Record<string, Position>, d
   let total = 0;
   for (const a of assets) {
     const p = positions[a.id];
-    let v = p && p.qty > 0 ? p.marketValue : 0;
+    let v = held(p) ? p.marketValue : 0;
     if (extra && extra.assetId === a.id) v += extra.value;
     if (v <= 0) continue;
     const k = keyOf(a, d);
@@ -71,7 +71,7 @@ function shareOfTotal(assets: Asset[], positions: Record<string, Position>, pred
   let part = 0;
   for (const a of assets) {
     const p = positions[a.id];
-    if (!p || p.qty <= 0) continue;
+    if (!held(p)) continue;
     total += p.marketValue;
     if (pred(a)) part += p.marketValue;
   }
@@ -81,23 +81,23 @@ function shareOfTotal(assets: Asset[], positions: Record<string, Position>, pred
 export function concentrationAlerts(assets: Asset[], positions: Record<string, Position>, s: Settings): Alert[] {
   const out: Alert[] = [];
   const L = s.limits;
-  const held = assets.filter((a) => (positions[a.id]?.qty ?? 0) > 0);
-  if (!held.length) return out;
+  const heldList = assets.filter((a) => held(positions[a.id]));
+  if (!heldList.length) return out;
 
   for (const r of exposure(assets, positions, 'ativo')) {
     const a = assets.find((x) => x.ticker === r.key);
     if (a && (a.class === 'tesouro' || a.class === 'etf')) continue; // veículos diversificados
     if (r.pct > L.maxAssetPct) out.push({ level: 'warn', code: 'ativo', message: `${r.key} representa ${r.pct.toFixed(1)}% da carteira (limite ${L.maxAssetPct}%).` });
   }
-  const sectors = new Set(held.filter((a) => a.class === 'acao' || a.class === 'fii').map((a) => a.sector));
+  const sectors = new Set(heldList.filter((a) => a.class === 'acao' || a.class === 'fii').map((a) => a.sector));
   for (const sec of sectors) {
     const pct = shareOfTotal(assets, positions, (a) => (a.class === 'acao' || a.class === 'fii') && a.sector === sec);
     if (pct > L.maxSectorPct) out.push({ level: 'warn', code: 'setor', message: `Setor "${sec}" soma ${pct.toFixed(1)}% do patrimônio (limite ${L.maxSectorPct}%).` });
   }
-  const issuers = new Set(held.filter((a) => a.class !== 'tesouro').map((a) => a.issuer));
+  const issuers = new Set(heldList.filter((a) => a.class !== 'tesouro').map((a) => a.issuer));
   for (const iss of issuers) {
     const pct = shareOfTotal(assets, positions, (a) => a.class !== 'tesouro' && a.issuer === iss);
-    const tick = held.filter((a) => a.issuer === iss).map((a) => a.ticker);
+    const tick = heldList.filter((a) => a.issuer === iss).map((a) => a.ticker);
     if (pct > L.maxIssuerPct) out.push({ level: 'warn', code: 'emissor', message: `Emissor "${iss}" (${tick.join(', ')}) soma ${pct.toFixed(1)}% (limite ${L.maxIssuerPct}%).` });
   }
   for (const r of exposure(assets, positions, 'segmentoFii'))
@@ -118,7 +118,7 @@ export interface Overlap {
 
 export function overlaps(assets: Asset[], positions: Record<string, Position>): Overlap[] {
   const out: Overlap[] = [];
-  const isHeld = (a: Asset) => (positions[a.id]?.qty ?? 0) > 0 || a.status === 'carteira';
+  const isHeld = (a: Asset) => held(positions[a.id]) || a.status === 'carteira';
   // 1) mesmo emissor / grupo econômico
   const byIssuer = new Map<string, Asset[]>();
   for (const a of assets) if (a.class !== 'tesouro') byIssuer.set(a.issuer, [...(byIssuer.get(a.issuer) || []), a]);
@@ -182,7 +182,7 @@ export function weights(assets: Asset[], positions: Record<string, Position>, a:
   let issuer = addValue;
   for (const x of assets) {
     const p = positions[x.id];
-    const v = p && p.qty > 0 ? p.marketValue : 0;
+    const v = held(p) ? p.marketValue : 0;
     total += v;
     if (x.id === a.id) asset += v;
     if ((x.class === 'acao' || x.class === 'fii') && x.sector === a.sector) sector += v;

@@ -27,9 +27,30 @@ Em **Dados & integrações → Banco de dados na nuvem**:
 
 A partir daí cada alteração é salva na nuvem ~3 s depois, e ao abrir o Radar (ou voltar à aba) ele busca o que mudou em outro aparelho. Se dois aparelhos alterarem ao mesmo tempo, o sistema pergunta qual versão manter em vez de sobrescrever. O token da brapi.dev e todos os parâmetros vão junto. Token do GitHub e senha ficam só no aparelho; **guarde a senha** — sem ela a cópia na nuvem não pode ser lida.
 
+## Central de Operações (importação histórica e lançamentos)
+
+Um único livro de operações alimenta todos os módulos (carteira, preço médio, proventos, aportes, alocação, concentração, ranking, projeção e painel). Fica em **Central de Operações**:
+
+- **Planilha** — 8 abas com as mesmas colunas do modelo oficial: 01 Ações · 02 FIIs · 03 ETFs · 04 Renda Fixa · 05 Proventos · 06 Aportes · 07 Eventos Corporativos · 08 Transferências e Ajustes. Filtros por ticker, tipo, período e pendência; edição; exclusão com confirmação; exportação XLSX (8 abas) e CSV.
+- **Novo lançamento** — formulários de compra/venda, aporte, proventos, renda fixa, evento corporativo e transferência. Usam o mesmo conversor e validador da importação, mostram a posição e o preço médio resultantes e barram duplicidade.
+- **Importar** — assistente em 5 etapas (arquivo → reconhecimento de abas e colunas com mapeamento manual → validação com correção linha a linha → conferência → processamento em lotes). Aceita o modelo oficial (botão “Baixar modelo oficial”), planilhas próprias e extratos da B3.
+- **Histórico por ativo** — todas as movimentações em ordem cronológica com posição, preço médio, custo e resultado após cada uma.
+- **Aportes** — aportes externos por mês e ano, retiradas, reinvestimentos e custo investido reconstruído.
+- **Revisão** — operações que não puderam ser calculadas com segurança e divergências com a “Quantidade total” informada.
+- **Importações** — cada importação é um lote identificado (hash do arquivo), que pode ser retomado se for interrompido ou revertido por inteiro.
+- **Auditoria** — toda criação, edição, exclusão, importação e reversão, com o valor anterior; exclusões podem ser restauradas.
+
+Regras de processamento (`src/domain/calc/positions.ts`, `src/domain/opsheet.ts`, `src/domain/ledger.ts`):
+- reconstrução cronológica pelo método do preço médio; no mesmo dia: saldo inicial → eventos → compras → vendas;
+- **aporte ≠ compra**; proventos são renda e não aporte; reinvestimento de proventos não aumenta o total de aportes externos;
+- transferência de custódia não altera quantidade nem custo; desdobramento/grupamento mudam a quantidade sem mudar o custo; bonificação soma o custo atribuído; amortização reduz o custo;
+- **saldo inicial** para quando o histórico começa depois da primeira compra; venda maior que a posição vai para revisão;
+- identificação única por “impressão digital” (ou pelo Identificador da operação): a mesma operação nunca é contada duas vezes, nem ao reimportar o arquivo;
+- cada lote é gravado de forma atômica; renda fixa pode ser lançada só por valor (avaliada a custo).
+
 ## Importar operações da B3
 
-Em **Histórico → Importar CSV/Excel**, envie o extrato baixado da [Área do Investidor da B3](https://www.investidor.b3.com.br) (Extratos → **Movimentação** ou **Negociação** → Excel). O formato é detectado automaticamente: compras, vendas, dividendos, JCP, rendimentos, amortizações e Tesouro Direto são lançados de uma vez, ligados aos ativos já cadastrados (ativos novos são criados). Linhas repetidas são ignoradas, então reimportar o extrato do mês não duplica nada.
+Em **Central de Operações → Importar**, envie o extrato baixado da [Área do Investidor da B3](https://www.investidor.b3.com.br) (Extratos → **Movimentação** ou **Negociação** → Excel). O formato é detectado automaticamente: compras, vendas, dividendos, JCP, rendimentos, amortizações e Tesouro Direto são lançados de uma vez, ligados aos ativos já cadastrados (ativos novos são criados). Linhas repetidas são ignoradas, então reimportar o extrato do mês não duplica nada.
 
 ## Como rodar localmente
 
@@ -42,7 +63,7 @@ npm run build      # gera dist/ (site estático; funciona em qualquer hospedagem
 
 Primeiro uso:
 1. **Dados & integrações** → cole o token gratuito da [brapi.dev](https://brapi.dev) → **Atualizar dados** (cotações + histórico de proventos da B3; Banco Central; CoinGecko).
-2. **Histórico** → lance compras, vendas e proventos recebidos (ou importe CSV/Excel). Quantidade, preço médio e rentabilidade são calculados daí.
+2. **Central de Operações** → importe o histórico (modelo oficial, planilha própria ou extrato da B3) ou lance as operações. Quantidade, preço médio e rentabilidade são calculados daí.
 3. Na ficha de cada ativo, preencha fundamentos (ROE, payout, vacância…) e revise proventos extraordinários.
 4. Tesouro IPCA+: informe PU e taxa atual manualmente (não há API aberta do Tesouro para navegador).
 
@@ -60,7 +81,7 @@ Primeiro uso:
 | Alocação | Alvo editável (30/30/25/10/5), sub/sobrealocação, classe prioritária, impacto do aporte |
 | Concentração | Exposição por ativo, setor, emissor, classe, segmento/tipo de FII, internacional e moeda; sobreposições (ITSA4×ITUB4, BOVX11×ações, IVVB11×NASD11) |
 | Projeção | Cenários conservador/moderado/otimista até 2045, valores reais e nominais, prazo para metas de renda |
-| Histórico | Compras, vendas, dividendos, JCP, rendimentos, juros, amortizações, aportes, reinvestimentos; importação/exportação CSV e Excel |
+| Central de Operações | Planilha de 8 abas, lançamentos, importação em massa (XLSX/CSV/B3) com validação, histórico por ativo, aportes, revisão, controle de importações e auditoria |
 | Parâmetros | Todas as regras: faixas da régua, DY-alvo, pesos, limiares, limites de concentração, gatilhos de revisão de tese |
 
 ## Regras de decisão implementadas

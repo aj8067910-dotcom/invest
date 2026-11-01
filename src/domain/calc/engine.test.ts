@@ -156,3 +156,24 @@ describe('Sobreposições', () => {
     expect(o.some((x) => x.kind === 'etf-etf' && x.tickers.includes('IVVB11') && x.tickers.includes('NASD11'))).toBe(true);
   });
 });
+
+import { parseNum, parseDate } from '../util';
+describe('leitura de números e datas de planilhas', () => {
+  it('números em formatos brasileiro e internacional', () => {
+    expect(parseNum('1.234,56')).toBe(1234.56);
+    expect(parseNum('1,234.56')).toBe(1234.56);
+    expect(parseNum('3.000')).toBe(3000);
+    expect(parseNum('0.005')).toBe(0.005);
+    expect(parseNum('R$ 30,50')).toBe(30.5);
+    expect(parseNum('(10,00)')).toBe(-10);
+    expect(parseNum('12.5')).toBe(12.5);
+  });
+  it('datas válidas e inválidas', () => {
+    expect(parseDate('05/01/2024')).toBe('2024-01-05');
+    expect(parseDate('5-1-24')).toBe('2024-01-05');
+    expect(parseDate('2024-01-05')).toBe('2024-01-05');
+    expect(parseDate('31/02/2024')).toBeNull();
+    expect(parseDate('32/13/2025')).toBeNull();
+    expect(parseDate(45296)).toBe('2024-01-05');
+  });
+});

@@ -10,7 +10,7 @@ import { isBazinClass, TX_LABEL } from '../domain/types';
 export default function Dividends() {
   const d = useDerived();
   const [view, setView] = useState<'recebido' | 'estimado'>('estimado');
-  const months = monthlyReceived(d.transactions, d.settings.profile.startDate, d.asOf).map((m) => ({ month: m.month, ...m.byType, total: m.received }));
+  const months = monthlyReceived(d.transactions, d.historyStart, d.asOf).map((m) => ({ month: m.month, ...m.byType, total: m.received }));
   const proForma = portfolioAnnualProForma(d.assets, d.positions);
   const inc = d.income;
   const share = view === 'recebido' ? inc.byAsset.map((x) => ({ name: x.ticker, value: x.value, share: x.share })) : d.forward.rows.map((x) => ({ name: x.ticker, value: x.annual, share: x.share }));
@@ -43,7 +43,7 @@ export default function Dividends() {
         <div>
           <div className="kicker">Renda passiva</div>
           <h1>Análise de dividendos</h1>
-          <p>Separação rigorosa entre o que foi <b>recebido</b> (lançado no Histórico) e o que é <b>estimado</b> (quantidade atual × proventos recorrentes por unidade). Extraordinários não entram na renda sustentável.</p>
+          <p>Separação rigorosa entre o que foi <b>recebido</b> (lançado na Central de Operações) e o que é <b>estimado</b> (quantidade atual × proventos recorrentes por unidade). Extraordinários não entram na renda sustentável.</p>
         </div>
       </div>
       <div className="grid g6">
@@ -69,7 +69,7 @@ export default function Dividends() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <Empty>Lance dividendos, JCP e rendimentos recebidos no Histórico.</Empty>
+            <Empty>Lance dividendos, JCP e rendimentos recebidos na Central de Operações.</Empty>
           )}
         </Card>
         <Card title="Evolução anual pro forma" sub={<>Proventos por unidade × quantidade atual: mostra o histórico de pagamento dos ativos que você tem hoje <DataTag kind="estimativa" /></>}>

@@ -10,10 +10,18 @@ import { monthlyReceived } from '../domain/calc/dividends';
 import { exposure } from '../domain/calc/concentration';
 import { CLASS_LABEL } from '../domain/types';
 import { useMemo } from 'react';
+import { isHeld } from '../domain/calc/positions';
+import { investedSeries } from '../domain/calc/history';
 
 export default function Dashboard() {
   const d = useDerived();
-  const snapshots = useStore((s) => s.snapshots);
+  const snapshotsRaw = useStore((s) => s.snapshots);
+  // evolução: custo investido reconstruído pelo histórico (mensal) + valor de mercado registrado diariamente
+  const snapshots = useMemo(() => {
+    const months = investedSeries(d.positions, d.asOf).map((m) => ({ date: m.month + '-28', invested: Number(m.invested.toFixed(2)), value: null as number | null }));
+    const first = snapshotsRaw[0]?.date;
+    return [...months.filter((m) => !first || m.date < first), ...snapshotsRaw].sort((a, b) => a.date.localeCompare(b.date));
+  }, [d.positions, d.asOf, snapshotsRaw]);
   const s = d.settings;
   const byId = useMemo(() => new Map(d.assets.map((a) => [a.id, a])), [d.assets]);
   const amount = s.profile.monthlyContribution;
@@ -21,13 +29,13 @@ export default function Dashboard() {
     () => planContribution({ amount, date: d.asOf, reserve: s.allocator.reserve, maxPerAsset: s.allocator.maxPerAsset, priorityClasses: s.allocator.priorityClasses, eligibleIds: null, includeMaintenance: s.allocator.includeMaintenance, mode: s.allocator.mode, maxAssets: s.allocator.maxAssets }, d.ranking, d.ctx),
     [d, amount, s.allocator],
   );
-  const months = monthlyReceived(d.transactions, s.profile.startDate, d.asOf);
+  const months = monthlyReceived(d.transactions, d.historyStart, d.asOf);
   const bazinRanked = d.ranking.filter((r) => r.bazin.applicable && r.bazin.ratio !== null);
   const cheap = bazinRanked.filter((r) => r.bazin.band === 'oportunidade' || r.bazin.band === 'extrema').sort((a, b) => a.bazin.ratio! - b.bazin.ratio!);
   const expensive = bazinRanked.filter((r) => r.bazin.ratio! > 100).sort((a, b) => b.bazin.ratio! - a.bazin.ratio!);
   const top = d.ranking.filter((r) => r.priority === 'maxima' || r.priority === 'alta').slice(0, 5);
   const sectors = exposure(d.assets.filter((a) => a.class === 'acao' || a.class === 'fii'), d.positions, 'setor');
-  const held = d.assets.filter((a) => (d.positions[a.id]?.qty ?? 0) > 0);
+  const held = d.assets.filter((a) => isHeld(d.positions[a.id]));
   const firstGoal = s.goals.find((g) => g > d.forward.monthly) ?? s.goals[s.goals.length - 1];
   const progress = firstGoal ? Math.min(100, (d.forward.monthly / firstGoal) * 100) : 0;
   const thesisAlerts = d.ranking.flatMap((r) => r.alerts.filter((x) => x.level !== 'info').map((x) => ({ ...x, message: `${byId.get(r.assetId)?.ticker}: ${x.message}` })));
@@ -54,7 +62,7 @@ export default function Dashboard() {
               Cotações, proventos, Tesouro Direto e indicadores do Banco Central chegam sozinhos (robô diário). Não é preciso token.
             </li>
             <li>
-              Importe o extrato de movimentação da <b>Área do Investidor da B3</b> em <Link to="/historico">Histórico</Link> (compras, vendas e proventos de uma vez) ou registre manualmente. Preço médio e quantidade são calculados automaticamente.
+              Importe o extrato de movimentação da <b>Área do Investidor da B3</b> em <Link to="/operacoes">Central de Operações</Link> (compras, vendas e proventos de uma vez) ou registre manualmente. Preço médio e quantidade são calculados automaticamente.
             </li>
             <li>
               Preencha fundamentos na ficha de cada ativo (ROE, payout, vacância…). Sem eles o ranking limita a classificação a “Monitoramento”.
@@ -189,7 +197,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid g2">
-        <Card title="Evolução patrimonial" sub="Registro diário automático desde o primeiro uso">
+        <Card title="Evolução patrimonial" sub="Custo investido reconstruído pelo histórico de operações e valor de mercado registrado diariamente">
           {snapshots.length > 1 ? (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={snapshots}>
@@ -203,7 +211,7 @@ export default function Dashboard() {
                 <XAxis dataKey="date" tickFormatter={dateBR} stroke="#56698a" fontSize={11} />
                 <YAxis stroke="#56698a" fontSize={11} tickFormatter={(v) => brlShort(v)} width={80} />
                 <Tooltip content={<ChartTip labelFmt={dateBR} />} />
-                <Area type="monotone" dataKey="value" name="Patrimônio" stroke="#2f8cff" fill="url(#gv)" strokeWidth={2} />
+                <Area type="monotone" dataKey="value" name="Patrimônio" stroke="#2f8cff" fill="url(#gv)" strokeWidth={2} connectNulls />
                 <Area type="monotone" dataKey="invested" name="Investido" stroke="#7f93b3" fill="none" strokeDasharray="4 4" />
               </AreaChart>
             </ResponsiveContainer>
@@ -223,7 +231,7 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <Empty>Registre proventos recebidos no Histórico para acompanhar a renda real.</Empty>
+            <Empty>Registre proventos recebidos na Central de Operações para acompanhar a renda real.</Empty>
           )}
         </Card>
       </div>

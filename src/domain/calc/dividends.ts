@@ -1,7 +1,7 @@
 import type { Asset, Transaction, Distribution } from '../types';
 import { INCOME_TX } from '../types';
 import { addMonths, isNum, median, monthKey, todayISO } from '../util';
-import type { Position } from './positions';
+import { isHeld, type Position } from './positions';
 
 const shiftDays = (iso: string, days: number) => {
   const d = new Date(iso + 'T12:00:00');
@@ -268,7 +268,7 @@ export function forwardIncome(assets: Asset[], positions: Record<string, Positio
   const rows: ForwardIncome[] = [];
   for (const a of assets) {
     const p = positions[a.id];
-    if (!p || p.qty <= 0) continue;
+    if (!isHeld(p) || p.qty <= 0) continue;
     const b = bazinBase(a, asOf);
     let perUnit = b.value ?? 0;
     let kind: 'real' | 'estimativa' = b.kind === 'real' ? 'real' : 'estimativa';
@@ -287,7 +287,7 @@ export function portfolioAnnualProForma(assets: Asset[], positions: Record<strin
   const map = new Map<number, { year: number; recorrente: number; extraordinario: number }>();
   for (const a of assets) {
     const p = positions[a.id];
-    if (!p || p.qty <= 0) continue;
+    if (!isHeld(p) || p.qty <= 0) continue;
     for (const d of a.distributions as Distribution[]) {
       if (d.type === 'amortizacao') continue;
       const y = Number(d.exDate.slice(0, 4));

@@ -132,7 +132,7 @@ async function writeGist(token: string, id: string | null, content: string): Pro
 // ───────────── estado local ─────────────
 function localPayload(): { payload: SyncPayload; hash: string } {
   const b = makeBackup();
-  const core = { assets: b.assets, transactions: b.transactions, settings: b.settings, macro: b.macro, snapshots: b.snapshots };
+  const core = { assets: b.assets, transactions: b.transactions, settings: b.settings, macro: b.macro, snapshots: b.snapshots, audit: b.audit, imports: b.imports };
   const hash = hashStr(JSON.stringify(core));
   return { payload: { ...b, updatedAt: new Date().toISOString(), device: deviceName() }, hash };
 }
@@ -278,7 +278,7 @@ export function startAutoSync(): Promise<void> {
   }
   useStore.subscribe((s, prev) => {
     if (!s.hydrated || !loadConfig()) return;
-    if (s.assets === prev.assets && s.transactions === prev.transactions && s.settings === prev.settings && s.macro === prev.macro && s.snapshots === prev.snapshots) return;
+    if (s.assets === prev.assets && s.transactions === prev.transactions && s.settings === prev.settings && s.macro === prev.macro && s.snapshots === prev.snapshots && s.audit === prev.audit && s.imports === prev.imports) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => push(), 3000);
   });

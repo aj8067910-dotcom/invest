@@ -15,6 +15,7 @@ import { annualHistory, avgDy, consecutiveYears, dividendCagr, paymentFrequency,
 import { fairValueSummary, valuations } from '../domain/calc/valuation';
 import { daysBetween, isNum, todayISO, uid } from '../domain/util';
 import { toast } from '../components/toast';
+import { isHeld } from '../domain/calc/positions';
 import { syncQuotes } from '../services/sync';
 import { parseDistributions, readSheet } from '../services/io';
 
@@ -114,7 +115,7 @@ function Header({ a }: { a: Asset }) {
           </button>
         </span>
         <span className="muted" style={{ fontSize: 12.5, marginLeft: 'auto' }}>
-          {p.qty > 0 ? `${qtyFmt(p.qty)} un. · PM ${brl(p.avgPrice)} · ${brl(p.marketValue)}` : 'Sem posição'}
+          {p.qty > 0 ? `${qtyFmt(p.qty)} un. · PM ${brl(p.avgPrice)} · ${brl(p.marketValue)}` : p.valueOnly ? `Aplicado ${brl(p.costBasis)} (renda fixa por valor)` : 'Sem posição'}
         </span>
       </div>
     </div>
@@ -168,7 +169,7 @@ function Summary({ a }: { a: Asset }) {
           )}
         </div>
       </div>
-      <Card title="Operações deste ativo" right={<Link className="btn sm" to={`/historico?ativo=${a.id}`}>Registrar operação</Link>}>
+      <Card title="Operações deste ativo" right={<Link className="btn sm" to={`/operacoes?ativo=${a.id}`}>Ver histórico e registrar</Link>}>
         {txs.length ? (
           <div className="tbl-wrap">
             <table className="tbl">
@@ -512,7 +513,7 @@ function FundamentalsTab({ a }: { a: Asset }) {
 function EtfTab({ a }: { a: Asset }) {
   const d = useDerived();
   const e = a.etf;
-  const held = d.assets.filter((x) => x.class === 'acao' && (d.positions[x.id]?.qty ?? 0) > 0 && e?.overlapTickers.includes(x.ticker));
+  const held = d.assets.filter((x) => x.class === 'acao' && isHeld(d.positions[x.id]) && e?.overlapTickers.includes(x.ticker));
   const otherEtfs = d.assets.filter((x) => x.class === 'etf' && x.id !== a.id && x.etf?.exposureTags.some((t) => e?.exposureTags.includes(t)));
   return (
     <div className="grid g2">

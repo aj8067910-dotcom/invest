@@ -174,42 +174,143 @@ export interface Asset {
 }
 
 export type TxType =
+  // negociação (ações, FIIs, ETFs, cripto e renda fixa)
   | 'compra'
   | 'venda'
+  | 'saldo_inicial' // posição de abertura quando o histórico começa depois da 1ª compra
+  // proventos
   | 'dividendo'
   | 'jcp'
   | 'rendimento'
   | 'juros'
   | 'amortizacao'
-  | 'aporte'
-  | 'retirada';
+  | 'outro_provento'
+  // dinheiro
+  | 'aporte' // dinheiro novo externo
+  | 'retirada'
+  | 'reinvestimento' // reaplicação de proventos: NÃO é aporte externo
+  // eventos corporativos
+  | 'bonificacao'
+  | 'desdobramento'
+  | 'grupamento'
+  | 'subscricao'
+  | 'evento_outro'
+  // transferências e ajustes
+  | 'transferencia' // custódia entre corretoras: não altera quantidade nem custo
+  | 'ajuste'; // correção de quantidade (vai para revisão)
 
 export const TX_LABEL: Record<TxType, string> = {
   compra: 'Compra',
   venda: 'Venda',
+  saldo_inicial: 'Saldo inicial',
   dividendo: 'Dividendo',
   jcp: 'JCP',
   rendimento: 'Rendimento FII',
   juros: 'Juros/Cupom',
   amortizacao: 'Amortização',
+  outro_provento: 'Outro pagamento',
   aporte: 'Aporte (depósito)',
   retirada: 'Retirada',
+  reinvestimento: 'Reinvestimento de proventos',
+  bonificacao: 'Bonificação',
+  desdobramento: 'Desdobramento',
+  grupamento: 'Grupamento',
+  subscricao: 'Subscrição',
+  evento_outro: 'Outro evento',
+  transferencia: 'Transferência de custódia',
+  ajuste: 'Ajuste de quantidade',
 };
 
-export const INCOME_TX: TxType[] = ['dividendo', 'jcp', 'rendimento', 'juros'];
+/** Proventos que contam como renda passiva (amortização devolve capital e fica fora). */
+export const INCOME_TX: TxType[] = ['dividendo', 'jcp', 'rendimento', 'juros', 'outro_provento'];
+export const EVENT_TX: TxType[] = ['bonificacao', 'desdobramento', 'grupamento', 'subscricao', 'evento_outro'];
+
+/** As oito abas da Central de Operações. */
+export type OpCategory = 'acoes' | 'fiis' | 'etfs' | 'renda_fixa' | 'proventos' | 'aportes' | 'eventos' | 'transferencias';
+export const OP_CATEGORY_LABEL: Record<OpCategory, string> = {
+  acoes: 'Ações',
+  fiis: 'Fundos Imobiliários',
+  etfs: 'ETFs',
+  renda_fixa: 'Renda Fixa',
+  proventos: 'Proventos',
+  aportes: 'Aportes',
+  eventos: 'Eventos Corporativos',
+  transferencias: 'Transferências e Ajustes',
+};
+export const OP_CATEGORIES: OpCategory[] = ['acoes', 'fiis', 'etfs', 'renda_fixa', 'proventos', 'aportes', 'eventos', 'transferencias'];
+
+export type RfMovement = 'aplicacao' | 'resgate_parcial' | 'resgate_total' | 'vencimento';
 
 export interface Transaction {
   id: string;
-  date: string; // ISO yyyy-mm-dd
+  date: string; // ISO yyyy-mm-dd — data original da operação
   type: TxType;
+  category?: OpCategory;
   assetId?: string | null;
   ticker?: string | null;
   qty?: number | null;
   price?: number | null;
   fees?: number | null;
-  amount: number; // valor total em R$ (compra = qty*preço+taxas; provento = líquido recebido)
-  reinvest?: boolean; // compra realizada com proventos
+  gross?: number | null; // "Total": quantidade × preço, antes de taxas
+  amount: number; // valor líquido que afeta a posição (compra = custo com taxas; venda = recebido; provento = líquido)
+  reinvest?: boolean; // compra paga com proventos
   notes?: string;
+  broker?: string | null; // corretora / instituição
+  extId?: string | null; // identificador da operação informado pelo usuário
+  declaredPosition?: number | null; // "Quantidade total" da planilha (conferência)
+  // proventos
+  exDate?: string | null;
+  payDate?: string | null;
+  perUnit?: number | null;
+  // renda fixa
+  rfMovement?: RfMovement | null;
+  rate?: number | null;
+  indexer?: string | null;
+  maturity?: string | null;
+  // eventos corporativos
+  factor?: number | null;
+  qtyBefore?: number | null;
+  // aportes e transferências
+  origin?: string | null;
+  fromInstitution?: string | null;
+  toInstitution?: string | null;
+  destination?: string | null;
+  // controle
+  fingerprint?: string;
+  importId?: string | null;
+  review?: string | null; // motivo de revisão manual
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  action: 'criar' | 'editar' | 'excluir' | 'importar' | 'reverter' | 'restaurar';
+  txId?: string;
+  importId?: string;
+  summary: string;
+  before?: Partial<Transaction> | null;
+  after?: Partial<Transaction> | null;
+}
+
+export interface ImportBatch {
+  id: string;
+  at: string;
+  fileName: string;
+  fileHash: string;
+  totalRows: number;
+  toImport: number;
+  imported: number;
+  skippedDuplicates: number;
+  excluded: number;
+  pending: number;
+  newAssets: string[];
+  byCategory: Partial<Record<OpCategory, number>>;
+  volume: number;
+  status: 'em_andamento' | 'concluida' | 'interrompida' | 'revertida';
+  finishedAt?: string | null;
+  revertedAt?: string | null;
 }
 
 export type Criterion =

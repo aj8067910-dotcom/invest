@@ -19,10 +19,12 @@ export function useDerived() {
     const ctx: ScoreContext = { assets, positions, settings, alloc, asOf };
     const ranking = rankAssets(ctx);
     const scoreById = Object.fromEntries(ranking.map((r) => [r.assetId, r]));
-    const income = incomeSummary(assets, transactions, settings.profile.startDate, asOf);
+    // início do histórico: o que vier primeiro entre a data configurada e a operação mais antiga importada
+    const historyStart = transactions.reduce((m, t) => (t.date < m ? t.date : m), settings.profile.startDate);
+    const income = incomeSummary(assets, transactions, historyStart, asOf);
     const forward = forwardIncome(assets, positions, asOf);
     const concAlerts = concentrationAlerts(assets, positions, settings);
-    return { asOf, assets, transactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts };
+    return { asOf, historyStart, assets, transactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts };
   }, [assets, transactions, settings]);
 }
 

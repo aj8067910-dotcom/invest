@@ -20,7 +20,7 @@ import Dividends from './pages/Dividends';
 import Allocation from './pages/Allocation';
 import Concentration from './pages/Concentration';
 import Projection from './pages/Projection';
-import History from './pages/History';
+import Operations from './pages/Operations';
 import DataSources from './pages/DataSources';
 import SettingsPage from './pages/Settings';
 
@@ -46,7 +46,7 @@ const NAV: { sec: string; items: { to: string; label: string; icon: string }[] }
   {
     sec: 'Registro',
     items: [
-      { to: '/historico', label: 'Histórico', icon: 'historico' },
+      { to: '/operacoes', label: 'Central de Operações', icon: 'historico' },
       { to: '/dados', label: 'Dados & integrações', icon: 'dados' },
       { to: '/config', label: 'Parâmetros', icon: 'config' },
     ],
@@ -165,7 +165,8 @@ export default function App() {
             <Route path="/alocacao" element={<Allocation />} />
             <Route path="/concentracao" element={<Concentration />} />
             <Route path="/projecao" element={<Projection />} />
-            <Route path="/historico" element={<History />} />
+            <Route path="/operacoes" element={<Operations />} />
+            <Route path="/historico" element={<Operations />} />
             <Route path="/dados" element={<DataSources />} />
             <Route path="/config" element={<SettingsPage />} />
             <Route path="*" element={<Dashboard />} />
