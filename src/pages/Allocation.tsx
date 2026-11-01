@@ -4,8 +4,8 @@ import { useDerived } from '../store/derived';
 import { useStore } from '../store/store';
 import { Badge, Card, Disclaimer, Field, NumInput, Stat } from '../components/ui';
 import { CLASS_COLOR, ChartTip } from '../components/common';
-import { computeAllocation } from '../domain/calc/allocation';
-import { CLASS_LABEL } from '../domain/types';
+import { computeAllocation, economicExposure, reserveTotal } from '../domain/calc/allocation';
+import { CLASS_LABEL, EXPOSURE_LABEL } from '../domain/types';
 import { brl, pct, signedPct } from '../domain/format';
 
 export default function Allocation() {
@@ -14,7 +14,7 @@ export default function Allocation() {
   const [contrib, setContrib] = useState<number | null>(d.settings.profile.monthlyContribution);
   const alloc = computeAllocation(d.assets, d.positions, d.settings, contrib ?? 0);
   const chart = alloc.rows.map((r) => ({ name: CLASS_LABEL[r.cls], Atual: Number(r.current.toFixed(2)), Alvo: r.target }));
-  const best = d.ranking.find((r) => (r.priority === 'maxima' || r.priority === 'alta') && d.assets.find((a) => a.id === r.assetId)?.class === alloc.priorityClass);
+  const best = d.ranking.find((r) => r.priority === 'oportunidade' && d.assets.find((a) => a.id === r.assetId)?.class === alloc.priorityClass);
 
   return (
     <div className="stack">
@@ -47,7 +47,7 @@ export default function Allocation() {
                     <NumInput className="sm" value={r.target} suffix="%" onChange={(v) => updateSettings((s) => ({ ...s, targetAllocation: { ...s.targetAllocation, [r.cls]: Math.max(0, v ?? 0) } }))} />
                   </td>
                   <td className={`num ${r.status === 'sub' ? 'warn-t' : r.status === 'sobre' ? 'neg' : 'pos'}`}>{signedPct(r.diff)}</td>
-                  <td>{r.status === 'sub' ? <Badge tone="warn">Subalocada</Badge> : r.status === 'sobre' ? <Badge tone="bad">Sobrealocada</Badge> : <Badge tone="good">No alvo (±2 p.p.)</Badge>}</td>
+                  <td>{r.status === 'sub' ? <Badge tone="warn">▼ Subalocada</Badge> : r.status === 'sobre' ? <Badge tone="bad">▲ Sobrealocada</Badge> : <Badge tone="good">● Na banda (±{d.settings.allocationBand} p.p.)</Badge>}</td>
                   <td className="num">{r.gapValue > 0 ? brl(r.gapValue) : <span className="dim">excesso {brl(-r.gapValue)}</span>}</td>
                   <td className="num">{pct(r.afterContribution)} <span className="dim" style={{ fontSize: 11 }}>({signedPct(r.afterContribution - r.current)})</span></td>
                 </tr>
@@ -61,9 +61,9 @@ export default function Allocation() {
         <Card title="Comparativo">
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chart}>
-              <CartesianGrid stroke="#1c2b46" vertical={false} />
-              <XAxis dataKey="name" stroke="#56698a" fontSize={11} />
-              <YAxis stroke="#56698a" fontSize={11} tickFormatter={(v) => v + '%'} width={40} />
+              <CartesianGrid stroke="var(--line)" vertical={false} />
+              <XAxis dataKey="name" stroke="var(--dim)" fontSize={11} />
+              <YAxis stroke="var(--dim)" fontSize={11} tickFormatter={(v) => v + '%'} width={40} />
               <Tooltip content={<ChartTip fmt={(v: number) => pct(v)} />} cursor={{ fill: 'rgba(47,140,255,.06)' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="Atual" fill="#2f8cff" radius={[4, 4, 0, 0]} />
@@ -77,9 +77,20 @@ export default function Allocation() {
             {alloc.rows.filter((r) => r.status === 'sobre').map((r) => <li key={r.cls}>{CLASS_LABEL[r.cls]} está {pct(r.diff)} acima do alvo — novos aportes nesta classe recebem peso menor. Não é necessário vender: o rebalanceamento acontece pelos aportes.</li>)}
             {alloc.total === 0 && <li>Sem posições registradas. Lance compras na Central de Operações.</li>}
           </ul>
-          <Field label="Tolerância usada" hint="Classes dentro de ±2 p.p. do alvo são consideradas alinhadas.">
-            <span className="mono">±2 p.p.</span>
+          <Field label="Banda de tolerância" hint="Classes dentro da banda são consideradas alinhadas; fora dela, os aportes vão para o maior déficit (nunca se sugere venda). Editável em Parâmetros.">
+            <span className="mono">±{d.settings.allocationBand} p.p.</span>
           </Field>
+        </Card>
+      </div>
+      <div className="grid g2">
+        <Card title="Exposição econômica" sub="O veículo pode diferir da exposição: BOVX11 é ETF, mas a exposição é a ações Brasil; ACWI11 e IVVB11 são exposição internacional.">
+          <table className="tbl">
+            <thead><tr><th>Exposição</th><th className="num">Valor</th><th className="num">Peso</th></tr></thead>
+            <tbody>{economicExposure(d.assets, d.positions).map((e) => <tr key={e.key}><td>{EXPOSURE_LABEL[e.key]}</td><td className="num">{brl(e.value)}</td><td className="num">{pct(e.pct)}</td></tr>)}</tbody>
+          </table>
+        </Card>
+        <Card title="Reserva de emergência" sub="Ativos marcados como reserva (no cadastro do ativo) ficam fora do cálculo de alocação.">
+          <Stat label="Reserva" value={brl(reserveTotal(d.assets, d.positions))} sub={d.assets.filter((a) => a.isReserve).map((a) => a.ticker).join(', ') || 'nenhum ativo marcado'} />
         </Card>
       </div>
       <Disclaimer />

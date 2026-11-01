@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ceilingPrice, computeBazin, bandFor } from './bazin';
+import { ceilingPrice, computeBazin, bandForMargin } from './bazin';
 import { computePosition, computePositions } from './positions';
 import { makeAsset, defaultSettings, seedAssets } from '../seed';
 import type { Asset, Transaction } from '../types';
@@ -23,23 +23,23 @@ describe('Bazin', () => {
   it('preço-teto = provento ÷ DY-alvo (exemplo do enunciado)', () => {
     expect(ceilingPrice(2, 8)).toBeCloseTo(25);
   });
-  it('faixas da régua para teto R$ 50', () => {
+  it('faixas da régua por margem (teto R$ 50, margem exigida 15%)', () => {
     const b = S.bands;
-    expect(bandFor((43 / 50) * 100, b)).toBe('aguardar');
-    expect(bandFor((40 / 50) * 100, b)).toBe('manutencao');
-    expect(bandFor((35 / 50) * 100, b)).toBe('oportunidade');
-    expect(bandFor((32 / 50) * 100, b)).toBe('extrema');
+    expect(bandForMargin(-4, b)).toBe('aguardar');
+    expect(bandForMargin(0, b)).toBe('manutencao');
+    expect(bandForMargin(14.9, b)).toBe('manutencao');
+    expect(bandForMargin(15, b)).toBe('oportunidade');
   });
   it('níveis e distância para a próxima faixa', () => {
-    let a = makeAsset({ ticker: 'TEST3', class: 'acao', dyTarget: 8 });
+    let a = makeAsset({ ticker: 'TEST3', class: 'acao', dyTarget: 8, dpaRef: '12m' });
     a = withDivs(a, [['2026-03-01', 2], ['2026-09-01', 2]]); // 4/ano → teto 50
     a.quote = { price: 45, date: AS_OF, source: 't' };
     const r = computeBazin(a, S, AS_OF);
     expect(r.ceiling).toBeCloseTo(50);
-    expect(r.band).toBe('aguardar');
-    expect(r.levels[1].upperPrice).toBeCloseTo(42.5);
-    expect(r.levels[2].upperPrice).toBeCloseTo(37.5);
-    expect(r.levels[3].upperPrice).toBeCloseTo(32.5);
+    expect(r.margin).toBeCloseTo(10);
+    expect(r.band).toBe('manutencao');
+    expect(r.levels[1].upperPrice).toBeCloseTo(50);
+    expect(r.levels[2].upperPrice).toBeCloseTo(42.5);
     expect(r.nextBand?.distanceAbs).toBeCloseTo(2.5);
     expect(r.dyCurrent).toBeCloseTo((4 / 45) * 100);
   });
@@ -98,7 +98,8 @@ describe('Ranking e aportes', () => {
     const assets = seedAssets();
     const good = assets.find((a) => a.ticker === 'BBSE3')!;
     Object.assign(good, withDivs(good, [['2026-02-01', 2.5], ['2026-08-01', 2.5], ['2025-08-01', 4.6], ['2024-08-01', 4.2], ['2023-08-01', 3.9], ['2022-08-01', 3.5]]));
-    good.quote = { price: 50, date: AS_OF, source: 't' }; // teto 5/0.06 = 83.3 → 60% extrema
+    good.quote = { price: 30, date: AS_OF, source: 't' }; // DPA 5a ≈ 4,05 → teto ≈ 50,6 → margem ≈ 41%
+    good.thesis = 'Seguradora com alto ROE e payout consistente.';
     good.fundamentals = { roe: 40, netMargin: 30, governance: 4, moat: 4, sectorRisk: 2, payout: 70 };
     const bad = assets.find((a) => a.ticker === 'POMO4')!;
     Object.assign(bad, withDivs(bad, [['2026-02-01', 1]]));
@@ -106,11 +107,13 @@ describe('Ranking e aportes', () => {
     bad.fundamentals = { roe: 20, netMargin: 10, payout: 140 };
     return { assets, good, bad };
   };
-  it('ativo com payout insustentável vai para revisar tese', () => {
+  it('ativo com payout insustentável (> 120%) fica em Aguardar com o motivo', () => {
     const { assets, bad } = build();
     const positions = computePositions(assets, []);
     const ctx = { assets, positions, settings: S, alloc: computeAllocation(assets, positions, S), asOf: AS_OF };
-    expect(scoreAsset(bad, ctx).priority).toBe('revisar');
+    const r = scoreAsset(bad, ctx);
+    expect(r.priority).toBe('aguardar');
+    expect(r.reasons.join(' ')).toContain('Payout');
   });
   it('ativo de qualidade com desconto sobe no ranking e recebe o aporte', () => {
     const { assets, good } = build();
@@ -118,11 +121,11 @@ describe('Ranking e aportes', () => {
     const ctx = { assets, positions, settings: S, alloc: computeAllocation(assets, positions, S), asOf: AS_OF };
     const ranking = rankAssets(ctx);
     const r = ranking.find((x) => x.assetId === good.id)!;
-    expect(['maxima', 'alta']).toContain(r.priority);
-    const plan = planContribution({ amount: 400, date: AS_OF, reserve: 0, maxPerAsset: 400, priorityClasses: [], eligibleIds: null, includeMaintenance: true, mode: 'concentrar', maxAssets: 3 }, ranking, ctx);
+    expect(r.priority).toBe('oportunidade');
+    const plan = planContribution({ amount: 400, date: AS_OF, reserve: 0, maxPerAsset: 400, priorityClasses: [], eligibleIds: [good.id], includeMaintenance: true, mode: 'concentrar', maxAssets: 3 }, ranking, ctx);
     expect(plan.lines[0].asset.ticker).toBe('BBSE3');
-    expect(plan.lines[0].qty).toBe(8);
-    expect(plan.invested).toBe(400);
+    expect(plan.lines[0].qty).toBe(14); // arredondado para cima: 400 ÷ 30 = 13,3 → 14
+    expect(plan.invested).toBe(420);
   });
   it('sem oportunidades recomenda aguardar', () => {
     const assets = seedAssets();

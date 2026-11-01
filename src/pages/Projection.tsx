@@ -5,6 +5,7 @@ import { useStore } from '../store/store';
 import { Card, DataTag, Disclaimer, Field, NumInput, Stat, Tabs } from '../components/ui';
 import { ChartTip } from '../components/common';
 import { atYearEnd, goalReach, project } from '../domain/calc/projection';
+import { capitalForIncome } from '../domain/calc/returns';
 import type { ScenarioKey, ScenarioParams } from '../domain/types';
 import { brl, brlShort, num, pct } from '../domain/format';
 import { todayISO } from '../domain/util';
@@ -80,12 +81,12 @@ export default function Projection() {
       <Card title={`Renda passiva mensal projetada (${real === 'real' ? 'R$ de hoje' : 'nominal'})`} sub={<DataTag kind="projecao" />}>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chart}>
-            <CartesianGrid stroke="#1c2b46" vertical={false} />
-            <XAxis dataKey="date" stroke="#56698a" fontSize={11} tickFormatter={(v) => v.slice(0, 4)} minTickGap={30} />
-            <YAxis stroke="#56698a" fontSize={11} tickFormatter={brlShort} width={80} />
+            <CartesianGrid stroke="var(--line)" vertical={false} />
+            <XAxis dataKey="date" stroke="var(--dim)" fontSize={11} tickFormatter={(v) => v.slice(0, 4)} minTickGap={30} />
+            <YAxis stroke="var(--dim)" fontSize={11} tickFormatter={brlShort} width={80} />
             <Tooltip content={<ChartTip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            {s.goals.slice(0, 4).map((g) => <ReferenceLine key={g} y={g} stroke="#263a5c" strokeDasharray="3 3" label={{ value: brlShort(g), fill: '#56698a', fontSize: 10, position: 'insideTopLeft' }} />)}
+            {s.goals.slice(0, 4).map((g) => <ReferenceLine key={g} y={g} stroke="var(--line2)" strokeDasharray="3 3" label={{ value: brlShort(g), fill: "var(--dim)", fontSize: 10, position: 'insideTopLeft' }} />)}
             {KEYS.map((k) => <Line key={k} type="monotone" dataKey={k} name={k} stroke={COLORS[k]} dot={false} strokeWidth={2} />)}
           </LineChart>
         </ResponsiveContainer>
@@ -119,11 +120,12 @@ export default function Projection() {
       <Card title="Metas de renda passiva mensal" sub="Quando cada meta seria atingida (renda líquida, em R$ de hoje). Edite os valores das metas.">
         <div className="tbl-wrap">
           <table className="tbl">
-            <thead><tr><th style={{ width: 140 }}>Meta</th><th className="num">Hoje</th>{KEYS.map((k) => <th key={k} className="num" style={{ color: COLORS[k] }}>{k}</th>)}<th></th></tr></thead>
+            <thead><tr><th style={{ width: 140 }}>Meta</th><th className="num">Capital necessário (DY {pct(s.defaultDy.acao, 1)})</th><th className="num">Hoje</th>{KEYS.map((k) => <th key={k} className="num" style={{ color: COLORS[k] }}>{k}</th>)}<th></th></tr></thead>
             <tbody>
               {s.goals.map((g, i) => (
                 <tr key={i}>
                   <td><NumInput className="sm" value={g} onChange={(v) => updateSettings((x) => ({ ...x, goals: x.goals.map((y, j) => (j === i ? v ?? 0 : y)) }))} /></td>
+                  <td className="num">{brl(capitalForIncome(g, s.defaultDy.acao))}</td>
                   <td className="num">{pct(Math.min(100, (d.forward.monthly / g) * 100), 0)}</td>
                   {KEYS.map((k) => {
                     const r = goalReach(series[k], g, true);

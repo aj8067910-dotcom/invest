@@ -29,8 +29,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Coletar dados de mercado (cotações, proventos, Tesouro, Banco Central)
-        run: node scripts/fetch-market.mjs
+      - name: Coletar dados de mercado (B3, CVM, Banco Central, Tesouro; Yahoo como fallback)
+        run: npx vite-node scripts/fetch-market.ts
         continue-on-error: true
       - run: npm run build
       - name: Publicar dist/ no branch gh-pages

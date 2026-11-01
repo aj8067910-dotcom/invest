@@ -1,31 +1,57 @@
 import { useMemo } from 'react';
 import { useStore } from './store';
+import { useMarket } from './market';
 import { computePositions, portfolioTotals } from '../domain/calc/positions';
 import { computeAllocation } from '../domain/calc/allocation';
 import { rankAssets, type ScoreContext } from '../domain/calc/scoring';
 import { forwardIncome, incomeSummary } from '../domain/calc/dividends';
 import { concentrationAlerts } from '../domain/calc/concentration';
-import { todayISO } from '../domain/util';
+import { portfolioReturns } from '../domain/calc/returns';
+import { planAutoProventos } from '../domain/calc/proventos';
+import { activeTransactions, isReceived } from '../domain/ledger';
+import { INCOME_TX } from '../domain/types';
+import { D, N, ZERO } from '../domain/money';
+import { addMonths, todayISO } from '../domain/util';
+import type { MarketData } from '../domain/market';
 
 export function useDerived() {
   const assets = useStore((s) => s.assets);
-  const transactions = useStore((s) => s.transactions);
+  const allTransactions = useStore((s) => s.transactions);
   const settings = useStore((s) => s.settings);
+  const conciliations = useStore((s) => s.conciliations);
+  const marketState = useMarket();
   return useMemo(() => {
+    const market: MarketData = marketState;
     const asOf = todayISO();
-    const positions = computePositions(assets, transactions);
+    // só lançamentos válidos (estornados e estornos ficam fora dos cálculos)
+    const transactions = activeTransactions(allTransactions);
+    const positions = computePositions(assets, transactions, asOf);
     const totals = portfolioTotals(assets, positions, transactions);
     const alloc = computeAllocation(assets, positions, settings);
-    const ctx: ScoreContext = { assets, positions, settings, alloc, asOf };
+    const ctx: ScoreContext = { assets, positions, settings, alloc, market, asOf };
     const ranking = rankAssets(ctx);
     const scoreById = Object.fromEntries(ranking.map((r) => [r.assetId, r]));
-    // início do histórico: o que vier primeiro entre a data configurada e a operação mais antiga importada
     const historyStart = transactions.reduce((m, t) => (t.date < m ? t.date : m), settings.profile.startDate);
     const income = incomeSummary(assets, transactions, historyStart, asOf);
     const forward = forwardIncome(assets, positions, asOf);
     const concAlerts = concentrationAlerts(assets, positions, settings);
-    return { asOf, historyStart, assets, transactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts };
-  }, [assets, transactions, settings]);
+    // DY da carteira = proventos LÍQUIDOS recebidos em 12 meses ÷ patrimônio atual; Yield on Cost ÷ custo
+    const y1 = addMonths(asOf, -12);
+    const net12 = transactions.filter((t) => INCOME_TX.includes(t.type) && isReceived(t, asOf) && t.date > y1).reduce((s, t) => s.plus(D(t.amount)), ZERO);
+    const dyPortfolio = totals.marketValue > 0 ? N(net12.dividedBy(totals.marketValue).times(100)) : null;
+    const yieldOnCost = totals.costBasis > 0 ? N(net12.dividedBy(totals.costBasis).times(100)) : null;
+    const monthEnd = (tk: string, m: string) => {
+      const rows = market.monthEnd?.[tk];
+      if (!rows) return null;
+      let v: number | null = null;
+      for (const [mm, p] of rows) if (mm <= m) v = p;
+      return v;
+    };
+    const returns = portfolioReturns(assets, positions, transactions, monthEnd, market.series?.cdi, asOf);
+    const autoPreview = Object.keys(market.calendar || {}).length ? planAutoProventos(assets, allTransactions, market.calendar, settings, asOf) : null;
+    const conferred = new Set(conciliations.filter((c) => c.status === 'conferido').map((c) => c.txId));
+    return { asOf, historyStart, assets, transactions, allTransactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts, market, dyPortfolio, yieldOnCost, returns, upcoming: autoPreview?.upcoming || [], provDivergences: autoPreview?.divergences || [], conciliations, conferred };
+  }, [assets, allTransactions, settings, marketState, conciliations]);
 }
 
 export type Derived = ReturnType<typeof useDerived>;

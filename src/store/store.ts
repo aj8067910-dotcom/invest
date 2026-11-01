@@ -3,7 +3,8 @@ import { persist, createJSONStorage, type StateStorage } from 'zustand/middlewar
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import type { Asset, AuditEntry, Distribution, Fundamentals, ImportBatch, Macro, Settings, Snapshot, SyncLogEntry, Transaction } from '../domain/types';
 import { TX_LABEL } from '../domain/types';
-import { fingerprintBase, migrateTransactions, normalizeTx } from '../domain/ledger';
+import { assignFingerprints, fingerprintBase, migrateTransactions, normalizeTx } from '../domain/ledger';
+import type { AutoPlan, Conciliation } from '../domain/calc/proventos';
 import { defaultMacro, defaultSettings, seedAssets } from '../domain/seed';
 import { todayISO, uid } from '../domain/util';
 
@@ -31,13 +32,27 @@ const ls = {
     }
   },
 };
+const STORE_VERSION = 3;
 const storage: StateStorage = {
   getItem: async (k) => {
+    let raw: string | null;
     try {
-      return (await idbGet(k)) ?? null;
+      raw = ((await idbGet(k)) as string | undefined) ?? null;
     } catch {
-      return ls.get(k);
+      raw = ls.get(k);
     }
+    // Migração reversível: ANTES de qualquer migração de esquema, guarda uma cópia integral
+    // do estado anterior (chave `radar-backup-pre-v3`), aguardando a gravação terminar.
+    try {
+      const v = raw ? JSON.parse(raw).version : null;
+      if (typeof v === 'number' && v < STORE_VERSION) {
+        const parsed = JSON.parse(raw!);
+        await idbSet(`radar-backup-pre-v${STORE_VERSION}`, JSON.stringify({ version: v, at: new Date().toISOString(), state: parsed.state }));
+      }
+    } catch {
+      /* sem IndexedDB: segue (o backup JSON manual continua disponível) */
+    }
+    return raw;
   },
   setItem: async (k, v) => {
     try {
@@ -66,6 +81,7 @@ export interface BackupData {
   snapshots: Snapshot[];
   audit?: AuditEntry[];
   imports?: ImportBatch[];
+  conciliations?: Conciliation[];
 }
 
 export type NewTx = Omit<Transaction, 'id'> & { id?: string };
@@ -92,12 +108,18 @@ interface State {
 
   /** Lança uma operação. Recusa duplicidade (mesma impressão digital) salvo `allowDuplicate`. */
   addTransaction: (t: NewTx, opts?: { allowDuplicate?: boolean; quiet?: boolean }) => AddResult;
-  updateTransaction: (id: string, patch: Partial<Transaction>) => void;
-  removeTransaction: (id: string) => void;
-  removeTransactions: (ids: string[]) => number;
+  /** Correção = estorno do original + novo lançamento (livro só de inclusão). */
+  updateTransaction: (id: string, patch: Partial<Transaction>, reason?: string) => void;
+  /** Estorno: o lançamento continua no livro, anulado por um lançamento de estorno. */
+  removeTransaction: (id: string, reason?: string) => void;
+  removeTransactions: (ids: string[], reason?: string) => number;
+  applyAutoPlan: (plan: AutoPlan) => number;
+  conciliations: Conciliation[];
+  addConciliations: (cs: Conciliation[]) => void;
   beginImport: (b: ImportBatch) => void;
   /** Grava um lote já validado (atômico): operações + ativos novos + contadores do lote. */
-  commitImportChunk: (importId: string, txs: Transaction[], newAssets: Asset[], skipped: number) => number;
+  /** Grava a importação inteira numa única operação atômica (tudo ou nada). */
+  commitImportChunk: (importId: string, txs: Transaction[], newAssets: Asset[], skipped: number, conciliations?: Conciliation[]) => number;
   finishImport: (importId: string, patch: Partial<ImportBatch>) => void;
   revertImport: (importId: string) => number;
 
@@ -180,47 +202,67 @@ export const useStore = create<State>()(
         set((s) => ({ transactions: [...s.transactions, final], audit: opts.quiet ? s.audit : addAudit(s.audit, { action: 'criar', txId: final.id, summary: describe(final, s.assets), after: final }) }));
         return { ok: true, id: final.id };
       },
-      updateTransaction: (id, patch) =>
+      updateTransaction: (id, patch, reason = 'Correção de lançamento') =>
         set((s) => {
           const cur = s.transactions.find((t) => t.id === id);
-          if (!cur) return {};
-          const next = normalizeTx({ ...cur, ...patch, id, createdAt: cur.createdAt }, s.assets);
-          const base = fingerprintBase(next);
-          const others = s.transactions.filter((x) => x.id !== id && (x.fingerprint || '').split('#')[0] === base).length;
-          next.fingerprint = others ? `${base}#${others + 1}` : base;
+          if (!cur || cur.type === 'estorno' || s.transactions.some((t) => t.reversalOf === id)) return {};
+          const by = deviceLabel();
+          const now = new Date().toISOString();
+          const next = normalizeTx({ ...cur, ...patch, id: uid(), correctionOf: id, reason, by, createdAt: now, fingerprint: undefined } as Transaction, s.assets);
+          const rev = reversal(cur, reason, by);
+          const changed: string[] = [];
+          for (const k of Object.keys(patch) as (keyof Transaction)[]) if (JSON.stringify(cur[k]) !== JSON.stringify(next[k])) changed.push(k as string);
+          if (!changed.length) return {};
+          const others = s.transactions.filter((x) => x.id !== id && (x.fingerprint || '').split('#')[0] === fingerprintBase(next)).length;
+          next.fingerprint = others ? `${fingerprintBase(next)}#${others + 1}` : fingerprintBase(next);
           const before: Partial<Transaction> = {};
           const after: Partial<Transaction> = {};
-          for (const k of Object.keys({ ...cur, ...next }) as (keyof Transaction)[]) {
-            if (k === 'updatedAt' || k === 'fingerprint') continue;
-            if (JSON.stringify(cur[k]) !== JSON.stringify(next[k])) {
-              (before as any)[k] = cur[k];
-              (after as any)[k] = next[k];
-            }
+          for (const k of changed) {
+            (before as any)[k] = (cur as any)[k];
+            (after as any)[k] = (next as any)[k];
           }
-          if (!Object.keys(after).length) return {};
-          return { transactions: s.transactions.map((t) => (t.id === id ? next : t)), audit: addAudit(s.audit, { action: 'editar', txId: id, summary: `Editado: ${describe(next, s.assets)} (${Object.keys(after).join(', ')})`, before, after }) };
+          return { transactions: [...s.transactions, rev, next], audit: addAudit(s.audit, { action: 'corrigir', txId: next.id, summary: `Correção (estorno + novo): ${describe(next, s.assets)} — motivo: ${reason} (${by})`, before, after }) };
         }),
-      removeTransaction: (id) =>
-        set((s) => {
-          const cur = s.transactions.find((t) => t.id === id);
-          if (!cur) return {};
-          return { transactions: s.transactions.filter((t) => t.id !== id), audit: addAudit(s.audit, { action: 'excluir', txId: id, summary: `Excluído: ${describe(cur, s.assets)}`, before: cur }) };
-        }),
-      removeTransactions: (ids) => {
-        const del = new Set(ids);
-        const gone = get().transactions.filter((t) => del.has(t.id));
-        if (!gone.length) return 0;
+      removeTransaction: (id, reason = 'Estorno solicitado') => {
+        get().removeTransactions([id], reason);
+      },
+      removeTransactions: (ids, reason = 'Estorno solicitado') => {
+        const st = get();
+        const already = new Set(st.transactions.filter((t) => t.type === 'estorno').map((t) => t.reversalOf));
+        const targets = st.transactions.filter((t) => ids.includes(t.id) && t.type !== 'estorno' && !already.has(t.id));
+        if (!targets.length) return 0;
+        const by = deviceLabel();
         set((s) => {
           let audit = s.audit;
-          for (const t of gone) audit = addAudit(audit, { action: 'excluir', txId: t.id, summary: `Excluído: ${describe(t, s.assets)}`, before: t });
-          return { transactions: s.transactions.filter((t) => !del.has(t.id)), audit };
+          for (const t of targets) audit = addAudit(audit, { action: 'estornar', txId: t.id, summary: `Estornado: ${describe(t, s.assets)} — motivo: ${reason} (${by})`, before: t });
+          return { transactions: [...s.transactions, ...targets.map((t) => reversal(t, reason, by))], audit };
         });
-        return gone.length;
+        return targets.length;
+      },
+      conciliations: [],
+      addConciliations: (cs) => set((s) => ({ conciliations: [...s.conciliations, ...cs], audit: cs.length ? addAudit(s.audit, { action: 'conciliar', summary: `${cs.length} provento(s) conciliado(s) com extrato: ${cs.filter((c) => c.status === 'conferido').length} conferido(s), ${cs.filter((c) => c.status === 'pendente').length} pendência(s).` }) : s.audit })),
+      applyAutoPlan: (plan) => {
+        if (!plan.create.length && !plan.reverse.length) return 0;
+        set((s) => {
+          const by = deviceLabel();
+          const revs = plan.reverse.map((r) => {
+            const t = s.transactions.find((x) => x.id === r.id)!;
+            return reversal(t, r.reason, by);
+          });
+          const have = new Set(s.transactions.map((t) => t.fingerprint));
+          const fresh = assignFingerprints(plan.create.map((t) => normalizeTx(t, s.assets))).filter((t) => !have.has(t.fingerprint));
+          return {
+            transactions: [...s.transactions, ...revs, ...fresh],
+            audit: addAudit(s.audit, { action: 'provento_auto', summary: `Proventos automáticos pela data-com: ${fresh.length} lançado(s), ${revs.length} estornado(s) por recálculo/retificação.` }),
+          };
+        });
+        return plan.create.length + plan.reverse.length;
       },
       beginImport: (b) => set((s) => ({ imports: [b, ...s.imports.filter((x) => x.id !== b.id)] })),
-      commitImportChunk: (importId, txs, newAssets, skipped) => {
+      commitImportChunk: (importId, txs, newAssets, skipped, conc = []) => {
         let added = 0;
         set((s) => {
+          if (conc.length) s = { ...s, conciliations: [...s.conciliations, ...conc] };
           const tickers = new Set(s.assets.map((a) => a.ticker));
           const assets = [...s.assets, ...newAssets.filter((a) => !tickers.has(a.ticker))];
           const have = new Set(s.transactions.map((t) => t.fingerprint));
@@ -229,6 +271,7 @@ export const useStore = create<State>()(
           added = fresh.length;
           return {
             assets,
+            conciliations: s.conciliations,
             transactions: [...s.transactions, ...fresh],
             imports: s.imports.map((b) => (b.id === importId ? { ...b, imported: b.imported + fresh.length, skippedDuplicates: b.skippedDuplicates + skipped + (txs.length - fresh.length) } : b)),
           };
@@ -246,23 +289,17 @@ export const useStore = create<State>()(
       revertImport: (importId) => {
         const st = get();
         const b = st.imports.find((x) => x.id === importId);
-        const gone = st.transactions.filter((t) => t.importId === importId);
-        set((s) => {
-          const transactions = s.transactions.filter((t) => t.importId !== importId);
-          // ativos criados por esta importação e sem nenhuma outra operação também saem
-          const used = new Set(transactions.map((t) => t.assetId));
-          const created = new Set(b?.newAssets || []);
-          const assets = s.assets.filter((a) => !(created.has(a.ticker) && !used.has(a.id)));
-          return {
-            transactions,
-            assets,
-            imports: s.imports.map((x) => (x.id === importId ? { ...x, status: 'revertida', revertedAt: new Date().toISOString() } : x)),
-            audit: addAudit(s.audit, { action: 'reverter', importId, summary: `Importação "${b?.fileName}" revertida: ${gone.length} operações removidas.`, before: null }),
-          };
-        });
+        const reversed = new Set(st.transactions.filter((t) => t.type === 'estorno').map((t) => t.reversalOf));
+        const gone = st.transactions.filter((t) => t.importId === importId && t.type !== 'estorno' && !reversed.has(t.id));
+        const by = deviceLabel();
+        const reason = `Reversão da importação "${b?.fileName}"`;
+        set((s) => ({
+          transactions: [...s.transactions, ...gone.map((t) => reversal(t, reason, by))],
+          imports: s.imports.map((x) => (x.id === importId ? { ...x, status: 'revertida', revertedAt: new Date().toISOString() } : x)),
+          audit: addAudit(s.audit, { action: 'reverter', importId, summary: `${reason}: ${gone.length} operações estornadas (o histórico original foi preservado). ${by}` }),
+        }));
         return gone.length;
       },
-
       updateSettings: (fn) => set((s) => ({ settings: fn(structuredClone(s.settings)) })),
       setMacro: (m) => set((s) => ({ macro: s.macro.some((x) => x.key === m.key) ? s.macro.map((x) => (x.key === m.key ? m : x)) : [...s.macro, m] })),
       recordSnapshot: (snap) =>
@@ -282,24 +319,43 @@ export const useStore = create<State>()(
           snapshots: b.snapshots || [],
           audit: b.audit || [],
           imports: b.imports || [],
+          conciliations: b.conciliations || [],
         })),
-      resetAll: () => set(() => ({ assets: seedAssets(), transactions: [], settings: defaultSettings(), macro: defaultMacro(), snapshots: [], syncLog: [], audit: [], imports: [] })),
+      resetAll: () => set(() => ({ assets: seedAssets(), transactions: [], settings: defaultSettings(), macro: defaultMacro(), snapshots: [], syncLog: [], audit: [], imports: [], conciliations: [] })),
     }),
     {
       name: 'radar-investimentos-v1',
-      version: 2,
+      version: STORE_VERSION,
       storage: createJSONStorage(() => storage),
-      partialize: (s) => ({ assets: s.assets, transactions: s.transactions, settings: s.settings, macro: s.macro, snapshots: s.snapshots, syncLog: s.syncLog, audit: s.audit, imports: s.imports }),
+      partialize: (s) => ({ assets: s.assets, transactions: s.transactions, settings: s.settings, macro: s.macro, snapshots: s.snapshots, syncLog: s.syncLog, audit: s.audit, imports: s.imports, conciliations: s.conciliations }),
       merge: (persisted, current) => {
         const p = (persisted || {}) as Partial<State>;
         const d = defaultSettings();
         const ps = p.settings;
         // mescla configurações para incorporar novos campos sem perder os do usuário
         const settings: Settings = ps
-          ? { ...d, ...ps, profile: { ...d.profile, ...ps.profile }, limits: { ...d.limits, ...ps.limits }, thesisRules: { ...d.thesisRules, ...ps.thesisRules }, scoring: { ...d.scoring, ...ps.scoring }, allocator: { ...d.allocator, ...ps.allocator }, integrations: { ...d.integrations, ...ps.integrations }, weights: { ...d.weights, ...ps.weights }, scenarios: { ...d.scenarios, ...ps.scenarios } }
+          ? { ...d, ...ps, profile: { ...d.profile, ...ps.profile }, limits: { ...d.limits, ...ps.limits }, thesisRules: { ...d.thesisRules, ...ps.thesisRules }, scoring: { ...d.scoring, ...ps.scoring }, allocator: { ...d.allocator, ...ps.allocator }, integrations: { ...d.integrations, ...ps.integrations }, weights: { ...d.weights, ...ps.weights }, scenarios: { ...d.scenarios, ...ps.scenarios }, tax: { ...d.tax, ...ps.tax }, dpa: { ...d.dpa, ...ps.dpa }, limits360: { ...d.limits360, ...ps.limits360 }, bands: ps.bands && 'margin' in ps.bands ? ps.bands : d.bands }
           : current.settings;
         const assets = p.assets || current.assets;
-        return { ...current, ...p, settings, transactions: migrateTransactions(p.transactions || [], assets), audit: p.audit || [], imports: p.imports || [] };
+        return { ...current, ...p, settings, transactions: migrateTransactions(p.transactions || [], assets), audit: p.audit || [], imports: p.imports || [], conciliations: p.conciliations || [] };
+      },
+      // Migração de esquema reversível: guarda uma cópia integral do estado ANTES de migrar
+      // (chave `radar-backup-pre-v<versão>` no IndexedDB), restaurável em Dados & integrações.
+      // (a cópia de segurança é gravada em storage.getItem, antes desta função)
+      migrate: (persisted: any, version: number) => {
+        if (!persisted) return persisted;
+        const st = { ...persisted };
+        if (version < 3) {
+          const ps = st.settings || {};
+          st.settings = {
+            ...ps,
+            bands: { margin: 15 }, // nova régua por margem (Etapa 8)
+            defaultDy: { acao: ps.defaultDy?.acao === 6 ? 8 : ps.defaultDy?.acao ?? 8, fii: ps.defaultDy?.fii ?? 8 },
+          };
+          st.transactions = migrateTransactions(st.transactions || [], st.assets || [], true);
+          st.audit = [{ id: uid(), at: new Date().toISOString(), action: 'migrar', summary: `Esquema migrado da versão ${version} para a 3 (livro só de inclusão, nova chave de duplicidade, régua por margem). Cópia de segurança anterior guardada no aparelho.` }, ...(st.audit || [])];
+        }
+        return st;
       },
       onRehydrateStorage: () => () => {
         useStore.setState({ hydrated: true });
@@ -310,7 +366,7 @@ export const useStore = create<State>()(
 
 export function makeBackup(): BackupData {
   const s = useStore.getState();
-  return { app: 'radar-de-investimentos', version: 2, exportedAt: new Date().toISOString(), assets: s.assets, transactions: s.transactions, settings: s.settings, macro: s.macro, snapshots: s.snapshots, audit: s.audit, imports: s.imports };
+  return { app: 'radar-de-investimentos', version: 3, exportedAt: new Date().toISOString(), assets: s.assets, transactions: s.transactions, settings: s.settings, macro: s.macro, snapshots: s.snapshots, audit: s.audit, imports: s.imports, conciliations: s.conciliations };
 }
 
 const AUDIT_MAX = 20000;
@@ -324,4 +380,37 @@ export function describe(t: Transaction, assets: Asset[]): string {
   const tk = (t.assetId && assets.find((a) => a.id === t.assetId)?.ticker) || t.ticker || '';
   const q = t.qty ? ` ${+t.qty.toFixed(8)}` : '';
   return `${TX_LABEL[t.type]}${tk ? ' ' + tk : ''}${q} em ${t.date.split('-').reverse().join('/')} — R$ ${t.amount.toFixed(2)}`;
+}
+
+/** Identifica quem fez a alteração (não há login: usa o aparelho). */
+export function deviceLabel(): string {
+  try {
+    const ua = navigator.userAgent;
+    const os = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iPhone/iPad' : /Mac/i.test(ua) ? 'Mac' : /Windows/i.test(ua) ? 'Windows' : /Linux/i.test(ua) ? 'Linux' : 'navegador';
+    return `aparelho ${os}`;
+  } catch {
+    return 'sistema';
+  }
+}
+
+/** Lançamento de estorno que anula `t` (o original permanece no livro). */
+function reversal(t: Transaction, reason: string, by: string): Transaction {
+  const now = new Date().toISOString();
+  return { id: uid(), date: todayISO(), type: 'estorno', category: t.category, assetId: t.assetId, ticker: t.ticker, amount: t.amount, qty: t.qty, reversalOf: t.id, reason, by, notes: `Estorno de ${t.type} de ${t.date}: ${reason}`, fingerprint: `estorno|${t.id}`, createdAt: now, updatedAt: now };
+}
+
+/** Restaura a cópia de segurança gravada antes da migração de esquema (reversão). */
+export async function restorePreMigrationBackup(): Promise<{ version: number; at: string } | null> {
+  const raw = await idbGet('radar-backup-pre-v3');
+  if (!raw) return null;
+  const b = JSON.parse(raw as string);
+  await idbSet('radar-investimentos-v1', JSON.stringify({ state: b.state, version: b.version }));
+  return { version: b.version, at: b.at };
+}
+export async function hasPreMigrationBackup() {
+  try {
+    return !!(await idbGet('radar-backup-pre-v3'));
+  } catch {
+    return false;
+  }
 }

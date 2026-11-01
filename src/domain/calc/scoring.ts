@@ -8,16 +8,18 @@ import { classNeedScore, type AllocationResult } from './allocation';
 import { weights as weightsOf } from './concentration';
 import { thesisAlerts, type Alert } from './thesis';
 import { daysBetween } from '../util';
+import { analyze, type Analysis } from './analysis360';
+import { emptyMarket, type MarketData } from '../market';
 
-export type Priority = 'maxima' | 'alta' | 'monitoramento' | 'aguardar' | 'revisar';
+/** Classificação de compra (Etapa 8): Oportunidade, Manutenção ou Aguardar. */
+export type Priority = 'oportunidade' | 'manutencao' | 'aguardar';
 
 export const PRIORITY_INFO: Record<Priority, { label: string; tone: string; rank: number }> = {
-  maxima: { label: 'Prioridade máxima', tone: 'great', rank: 0 },
-  alta: { label: 'Prioridade alta', tone: 'good', rank: 1 },
-  monitoramento: { label: 'Monitoramento', tone: 'info', rank: 2 },
-  aguardar: { label: 'Aguardar', tone: 'muted', rank: 3 },
-  revisar: { label: 'Não comprar / revisar tese', tone: 'bad', rank: 4 },
+  oportunidade: { label: 'Oportunidade', tone: 'good', rank: 0 },
+  manutencao: { label: 'Manutenção', tone: 'info', rank: 1 },
+  aguardar: { label: 'Aguardar', tone: 'muted', rank: 2 },
 };
+const down = (p: Priority): Priority => (p === 'oportunidade' ? 'manutencao' : 'aguardar');
 
 export interface CriterionScore {
   key: Criterion;
@@ -37,6 +39,8 @@ export interface ScoreResult {
   reasons: string[]; // justificativa
   alerts: Alert[];
   bazin: BazinResult;
+  analysis: Analysis;
+  quality: { passed: boolean; failures: string[] };
 }
 
 export interface ScoreContext {
@@ -44,6 +48,7 @@ export interface ScoreContext {
   positions: Record<string, Position>;
   settings: Settings;
   alloc: AllocationResult;
+  market?: MarketData;
   asOf?: string;
 }
 
@@ -213,83 +218,63 @@ export function scoreAsset(a: Asset, ctx: ScoreContext): ScoreResult {
   score = Math.max(0, Math.min(100, score));
   const coverage = wApp ? (wData / wApp) * 100 : 0;
 
-  // ── Classificação com travas
+  // ── Classificação (Etapa 8) — régua objetiva por margem + filtro de qualidade
   const reasons: string[] = [];
-  const sc = s.scoring;
+  const analysis = analyze(a, s, ctx.market || emptyMarket(), bz, ctx.positions[a.id]);
+  const failures: string[] = [];
   let priority: Priority;
-  const severe = alerts.some((x) => x.level === 'danger');
-  const warn = alerts.some((x) => x.level === 'warn');
-
   if (bazinClass) {
-    if (score >= sc.maxPriorityScore) priority = 'maxima';
-    else if (score >= sc.highPriorityScore) priority = 'alta';
-    else if (score >= sc.monitorScore) priority = 'monitoramento';
-    else priority = 'aguardar';
-    if (bz.band === 'aguardar') {
+    if (bz.margin === null) {
       priority = 'aguardar';
-      reasons.push(`Preço acima de ${s.bands.wait}% do teto: aguardar.`);
-    } else if (bz.band === 'manutencao' && priority === 'maxima') {
-      priority = 'alta';
-      reasons.push('Faixa de manutenção: compra seletiva, não máxima.');
+      reasons.push(bz.price === null ? 'Sem cotação: margem não calculável.' : 'Sem preço-teto (faltam proventos recorrentes).');
+    } else {
+      priority = bz.band === 'oportunidade' ? 'oportunidade' : bz.band === 'manutencao' ? 'manutencao' : 'aguardar';
+      reasons.push(`Margem de segurança ${bz.margin.toFixed(1).replace('.', ',')}% (teto R$ ${bz.ceiling!.toFixed(2).replace('.', ',')}): faixa ${PRIORITY_INFO[priority].label}.`);
     }
-    if (!bz.price) {
-      priority = cap(priority, 'monitoramento');
-      reasons.push('Sem cotação: não é possível avaliar preço.');
-    } else if (!bz.ceiling) {
-      priority = cap(priority, 'monitoramento');
-      reasons.push('Sem proventos recorrentes cadastrados: preço-teto indisponível.');
+    // filtro de qualidade
+    const blockRed = (k: string) => analysis.blocks.find((b) => b.key === k)?.items.filter((x) => x.status === 'vermelho') || [];
+    for (const k of ['endividamento', 'perfil', 'sustentabilidade']) for (const x of blockRed(k)) failures.push(`${x.label}: ${x.note || 'alerta vermelho'}`);
+    if (analysis.fScore !== null && analysis.fScore < s.limits360.fScoreMin) failures.push(`F-Score ${analysis.fScore} abaixo de ${s.limits360.fScoreMin}`);
+    if (analysis.altman !== null && analysis.altman < s.limits360.altmanGrey) failures.push(`Altman Z″ ${analysis.altman.toFixed(2)} na zona de alerta`);
+    if (!a.thesis?.trim()) failures.push('tese não registrada');
+    if (priority === 'oportunidade' && failures.length) {
+      priority = 'manutencao';
+      reasons.push(`Não aprovado no filtro de qualidade: ${failures.join('; ')}.`);
     }
-    if (bz.extraShare >= 30) {
-      priority = cap(priority, 'alta');
-      reasons.push('Proventos recentes com peso relevante de extraordinários.');
-    }
-    if (bz.dyCurrent !== null && bz.dyCurrent > bz.dyTarget * 2 && (crit.sustentabilidade?.score ?? 0) < 50) {
-      priority = cap(priority, 'monitoramento');
-      reasons.push('DY muito alto com sustentabilidade fraca ou não comprovada.');
-    }
-    if (bz.band === 'extrema' && warn) {
-      priority = 'revisar';
-      reasons.push('Queda forte com sinais de deterioração: revisar tese antes de comprar.');
+    // alertas
+    const reds = analysis.reds;
+    if (reds.length) {
+      priority = 'aguardar';
+      reasons.push(`Alerta vermelho: ${reds.map((x) => (x.note ? `${x.label} (${x.note})` : x.label)).join('; ')}.`);
+    } else if (analysis.yellows.length >= 2 && priority === 'oportunidade') {
+      priority = 'manutencao';
+      reasons.push(`Dois ou mais alertas amarelos: ${analysis.yellows.map((x) => x.label).join('; ')}.`);
     }
   } else {
-    const need = ctx.alloc.rows.find((x) => x.cls === a.class)!;
-    if (need.diff < -5 && score >= sc.highPriorityScore) priority = 'maxima';
-    else if (need.diff < -2 && score >= sc.monitorScore) priority = 'alta';
-    else if (need.diff <= 2) priority = 'monitoramento';
-    else priority = 'aguardar';
-    reasons.push(`${a.class === 'etf' ? 'ETF' : a.class === 'tesouro' ? 'Tesouro' : 'Cripto'}: decisão guiada por alocação (classe ${need.current.toFixed(1)}% vs alvo ${need.target}%), sem preço-teto Bazin.`);
-    if (a.class === 'cripto') {
-      priority = cap(priority, 'alta');
-      reasons.push('Cripto não gera renda passiva: pontuação limitada a 65 e aporte restrito à lacuna da classe.');
-    }
+    // ETFs, Tesouro e cripto: decisão por alocação (banda de tolerância da classe)
+    const cls = ctx.alloc.rows.find((x) => x.cls === a.class)!;
+    priority = cls.status === 'sub' ? 'oportunidade' : cls.status === 'ok' ? 'manutencao' : 'aguardar';
+    reasons.push(`Decisão por alocação: classe em ${cls.current.toFixed(1).replace('.', ',')}% vs alvo ${cls.target}% (banda ±${s.allocationBand} p.p.).`);
     if (!isNum(a.quote.price)) {
-      priority = cap(priority, 'monitoramento');
-      reasons.push(a.class === 'tesouro' ? 'Sem PU atual: informe o preço do título.' : 'Sem cotação.');
-    }
-    if (a.class === 'tesouro' && !isNum(a.fixed?.marketRate)) {
-      priority = cap(priority, 'alta');
-      reasons.push('Taxa atual de compra não informada: atratividade não avaliada.');
-    }
-    if (a.class === 'tesouro' && crit.preco?.score !== null && (crit.preco?.score ?? 100) < 35) {
-      priority = cap(priority, 'monitoramento');
-      reasons.push('Taxa real abaixo da referência de atratividade.');
+      priority = 'aguardar';
+      reasons.push(a.class === 'tesouro' ? 'Sem preço unitário atual.' : 'Sem cotação.');
     }
   }
-  if (coverage < sc.minCoverage) {
-    priority = cap(priority, 'monitoramento');
-    reasons.push(`Dados insuficientes (${coverage.toFixed(0)}% do peso com informação).`);
+  if (a.riskLevel >= 5 && priority !== 'aguardar') {
+    priority = 'aguardar';
+    reasons.push('Risco classificado por você como muito alto (5/5).');
   }
-  if (a.riskLevel >= 4) {
-    priority = cap(priority, 'monitoramento');
-    reasons.push('Risco elevado impede prioridade de compra.');
-  }
-  if (warn && priority !== 'revisar') {
-    priority = cap(priority, 'monitoramento');
-    reasons.push('Alertas de fundamentos ativos: monitorar antes de comprar.');
-  }
-  if (severe) {
-    priority = 'revisar';
-    reasons.push('Alerta grave na tese (deterioração, payout insustentável, inadimplência ou risco máximo).');
+  // peso-alvo e sobreposição econômica
+  const target = isNum(a.targetWeight) ? a.targetWeight : s.limits.maxAssetPct;
+  if (priority !== 'aguardar' && ctx.alloc.total > s.profile.monthlyContribution * 10) {
+    const w = weightsOf(ctx.assets, ctx.positions, a);
+    if (w.assetPct > target) {
+      priority = down(priority);
+      reasons.push(`Acima do peso-alvo (${w.assetPct.toFixed(1).replace('.', ',')}% vs ${target}%): cai uma faixa.`);
+    } else if (w.issuerPct > s.limits.maxIssuerPct) {
+      priority = down(priority);
+      reasons.push(`Sobreposição econômica: grupo "${a.issuer}" já soma ${w.issuerPct.toFixed(1).replace('.', ',')}% (limite ${s.limits.maxIssuerPct}%): cai uma faixa.`);
+    }
   }
 
   // Pontos fortes e fracos
@@ -302,13 +287,9 @@ export function scoreAsset(a: Asset, ctx: ScoreContext): ScoreResult {
   if (weak.length) head.push(`Pontos fracos: ${weak.map((c) => c.label.toLowerCase()).join(', ')}.`);
   reasons.unshift(...head);
 
-  return { assetId: a.id, score: Math.round(score), coverage, priority, criteria, reasons, alerts, bazin: bz };
+  return { assetId: a.id, score: Math.round(score), coverage, priority, criteria, reasons, alerts, bazin: bz, analysis, quality: { passed: !failures.length, failures } };
 }
 
-function cap(p: Priority, max: Priority): Priority {
-  if (p === 'revisar') return p;
-  return PRIORITY_INFO[p].rank < PRIORITY_INFO[max].rank ? max : p;
-}
 
 export function rankAssets(ctx: ScoreContext, filter?: (a: Asset) => boolean): ScoreResult[] {
   return ctx.assets

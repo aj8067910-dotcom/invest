@@ -3,6 +3,38 @@
 // integração (brapi.dev, Banco Central, CoinGecko) ou de preenchimento manual.
 import type { Asset, AssetClass, AssetStatus, Settings, FiiType, Macro } from './types';
 import { uid } from './util';
+import { defaultTaxRules } from './tax';
+import type { Limits360 } from './types';
+
+/** Limites padrão da análise 360°; cada um com fundamento em `analysis360.ts`. */
+export function defaultLimits360(): Limits360 {
+  return {
+    roeMin: 10,
+    netDebtEbitdaYellow: 3.0,
+    netDebtEbitdaRed: 3.5,
+    utilityNetDebtEbitdaYellow: 4.0,
+    utilityNetDebtEbitdaRed: 4.5,
+    interestCoverageYellow: 3,
+    interestCoverageRed: 1.5,
+    shortTermDebtPct: 30,
+    payoutYellow: 100,
+    payoutRed: 120,
+    fcfCoverageYellow: 1.0,
+    dyTrapRatio: 1.5,
+    fScoreMin: 5,
+    altmanSafe: 5.85,
+    altmanGrey: 4.35,
+    minDailyLiquidity: 1000,
+    fiiVacancyYellow: 10,
+    fiiVacancyRed: 20,
+    fiiDebtorConcentration: 10,
+    fiiMinHolders: 150,
+    fiiOverDistributionMonths: 3,
+    staleDays: 7,
+    commoditySectors: ['Mineração', 'Petróleo e gás', 'Papel e celulose', 'Siderurgia'],
+    utilitySectors: ['Energia elétrica', 'Saneamento'],
+  };
+}
 
 const IBOV_NOTE = 'Composição a validar com a carteira teórica vigente do Ibovespa (B3).';
 
@@ -131,6 +163,7 @@ export function seedAssets(): Asset[] {
       fiiSegment: d.fiiSegment,
       international: !!d.intl,
       currency: d.usd ? 'USD' : 'BRL',
+      exposure: d.cls === 'acao' ? 'acoes_br' : d.cls === 'fii' ? 'fii' : d.cls === 'tesouro' ? 'renda_fixa' : d.cls === 'cripto' ? 'cripto' : d.intl ? 'internacional' : 'acoes_br',
       ...d.extra,
     }),
   );
@@ -147,9 +180,9 @@ export function defaultSettings(): Settings {
       strategy: 'Buy and Hold com foco em dividendos (Bazin / Barsi)',
     },
     targetAllocation: { acao: 30, fii: 30, tesouro: 25, etf: 10, cripto: 5 },
-    defaultDy: { acao: 6, fii: 8 },
+    defaultDy: { acao: 8, fii: 8 }, // DY-alvo do investidor; o DY original de Bazin (6%) fica em bazinDy
     dyScenarios: [6, 8, 9, 10],
-    bands: { wait: 85, maintenance: 75, opportunity: 65 },
+    bands: { margin: 15 },
     weights: {
       qualidade: 16,
       sustentabilidade: 16,
@@ -204,6 +237,12 @@ export function defaultSettings(): Settings {
       maxAssets: 3,
     },
     integrations: { brapiToken: '' },
+    tax: defaultTaxRules(),
+    dpa: { acao: '5a', fii: '12m', commodity: 'ciclo' },
+    bazinDy: 6,
+    limits360: defaultLimits360(),
+    allocationBand: 5,
+    theme: 'sistema',
   };
 }
 

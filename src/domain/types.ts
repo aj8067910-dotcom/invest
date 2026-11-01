@@ -169,6 +169,26 @@ export interface Asset {
   fixed?: FixedIncomeInfo;
   crypto?: CryptoInfo;
   events: CorporateEvent[];
+  // ── carteira e alocação
+  targetWeight?: number | null; // peso-alvo do ativo na carteira (%)
+  isReserve?: boolean; // reserva de emergência: fica fora da alocação
+  exposure?: Exposure | null; // exposição econômica (pode diferir do veículo)
+  // ── preço-teto
+  dpaRef?: DpaRef | null; // DPA de referência deste ativo (null → padrão da classe)
+  fiiTaxExempt?: boolean; // FII cumpre os requisitos de isenção (Lei 14.754/2023)
+  // ── watchlist
+  interestPrice?: number | null; // preço de interesse manual
+  interestNote?: string | null;
+  interestDate?: string | null;
+  // ── tese e vigilância
+  risks?: string;
+  catalysts?: string;
+  triggers?: { id: string; date: string; text: string }[];
+  // ── indicadores manuais (sem fonte estruturada), cada um com fonte e data
+  manual?: Record<string, ManualMetric>;
+  // ── estado dos alertas (para avisar mudança de cor)
+  alertState?: { at: string; levels: Record<string, 'verde' | 'amarelo' | 'vermelho'> } | null;
+  alertChanges?: { at: string; key: string; from: string; to: string }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -194,10 +214,16 @@ export type TxType =
   | 'desdobramento'
   | 'grupamento'
   | 'subscricao'
+  | 'direito_subscricao' // direitos recebidos (custo zero; venda gera resultado)
+  | 'troca_ticker' // mudança de código: posição e custo vão para o novo ativo
+  | 'incorporacao' // ações do ativo de origem viram ações do ativo de destino (fator)
+  | 'cisao' // parte do custo vai para o ativo cindido (percentual do custo)
+  | 'leilao_fracao' // venda de frações em leilão: gera resultado realizado
   | 'evento_outro'
   // transferências e ajustes
   | 'transferencia' // custódia entre corretoras: não altera quantidade nem custo
-  | 'ajuste'; // correção de quantidade (vai para revisão)
+  | 'ajuste' // correção de quantidade (vai para revisão)
+  | 'estorno'; // anula um lançamento anterior (livro só de inclusão)
 
 export const TX_LABEL: Record<TxType, string> = {
   compra: 'Compra',
@@ -216,14 +242,22 @@ export const TX_LABEL: Record<TxType, string> = {
   desdobramento: 'Desdobramento',
   grupamento: 'Grupamento',
   subscricao: 'Subscrição',
+  direito_subscricao: 'Direitos de subscrição',
+  troca_ticker: 'Troca de ticker',
+  incorporacao: 'Incorporação',
+  cisao: 'Cisão',
+  leilao_fracao: 'Leilão de frações',
   evento_outro: 'Outro evento',
   transferencia: 'Transferência de custódia',
   ajuste: 'Ajuste de quantidade',
+  estorno: 'Estorno',
 };
 
 /** Proventos que contam como renda passiva (amortização devolve capital e fica fora). */
 export const INCOME_TX: TxType[] = ['dividendo', 'jcp', 'rendimento', 'juros', 'outro_provento'];
-export const EVENT_TX: TxType[] = ['bonificacao', 'desdobramento', 'grupamento', 'subscricao', 'evento_outro'];
+export const EVENT_TX: TxType[] = ['bonificacao', 'desdobramento', 'grupamento', 'subscricao', 'direito_subscricao', 'troca_ticker', 'incorporacao', 'cisao', 'leilao_fracao', 'evento_outro'];
+/** Eventos que movem posição e custo de um ativo para outro. */
+export const TRANSFER_EVENTS: TxType[] = ['troca_ticker', 'incorporacao', 'cisao'];
 
 /** As oito abas da Central de Operações. */
 export type OpCategory = 'acoes' | 'fiis' | 'etfs' | 'renda_fixa' | 'proventos' | 'aportes' | 'eventos' | 'transferencias';
@@ -275,6 +309,24 @@ export interface Transaction {
   fromInstitution?: string | null;
   toInstitution?: string | null;
   destination?: string | null;
+  // custos detalhados (somados em `fees`)
+  corretagem?: number | null;
+  emolumentos?: number | null;
+  taxaLiquidacao?: number | null;
+  source?: TxSource | null; // origem do lançamento
+  // proventos: bruto, IR retido e líquido (= amount)
+  ir?: number | null;
+  auto?: boolean; // gerado pelo cálculo automático pela data-com
+  autoKey?: string | null; // ativo|tipo|data-com|pagamento
+  reliability?: 'confirmada' | 'estimada' | null;
+  // eventos que movem posição entre ativos
+  targetAssetId?: string | null;
+  costShare?: number | null; // cisão: % do custo transferido
+  // livro só de inclusão
+  reversalOf?: string | null; // estorno: id do lançamento anulado
+  correctionOf?: string | null; // novo lançamento que substitui um estornado
+  reason?: string | null; // motivo do estorno/correção
+  by?: string | null; // quem (aparelho)
   // controle
   fingerprint?: string;
   importId?: string | null;
@@ -283,10 +335,12 @@ export interface Transaction {
   updatedAt?: string;
 }
 
+export type TxSource = 'B3' | 'nota' | 'manual' | 'importacao' | 'automatico' | 'corretora';
+
 export interface AuditEntry {
   id: string;
   at: string;
-  action: 'criar' | 'editar' | 'excluir' | 'importar' | 'reverter' | 'restaurar';
+  action: 'criar' | 'editar' | 'excluir' | 'estornar' | 'corrigir' | 'importar' | 'reverter' | 'restaurar' | 'provento_auto' | 'conciliar' | 'migrar';
   txId?: string;
   importId?: string;
   summary: string;
@@ -342,10 +396,9 @@ export const CRITERION_LABEL: Record<Criterion, string> = {
   alocacao: 'Alocação estratégica',
 };
 
+/** Régua por margem de segurança: margem = (teto − preço) ÷ teto. */
 export interface Bands {
-  wait: number; // acima disto (% do teto) → aguardar
-  maintenance: number; // entre maintenance e wait → manutenção
-  opportunity: number; // entre opportunity e maintenance → oportunidade; abaixo → extrema
+  margin: number; // % — Oportunidade a partir desta margem; Manutenção entre 0 e ela; Aguardar abaixo de 0
 }
 
 export interface ScenarioParams {
@@ -359,6 +412,67 @@ export interface ScenarioParams {
 }
 
 export type ScenarioKey = 'conservador' | 'moderado' | 'otimista';
+
+export type Exposure = 'acoes_br' | 'fii' | 'renda_fixa' | 'internacional' | 'cripto';
+export const EXPOSURE_LABEL: Record<Exposure, string> = {
+  acoes_br: 'Ações Brasil',
+  fii: 'Imobiliário (FIIs)',
+  renda_fixa: 'Renda fixa',
+  internacional: 'Internacional',
+  cripto: 'Cripto',
+};
+export type DpaRef = '12m' | '3a' | '5a' | 'ciclo';
+export const DPA_REF_LABEL: Record<DpaRef, string> = { '12m': 'Últimos 12 meses', '3a': 'Média de 3 anos', '5a': 'Média de 5 anos', ciclo: 'Ciclo completo (todos os anos, mín. 5)' };
+
+export interface ManualMetric {
+  value: number | null;
+  source: string;
+  date: string;
+}
+
+/** Regras tributárias vigentes — todas editáveis, com a base legal declarada. */
+export interface TaxRules {
+  jcpRate: number; // IRRF sobre JCP (%)
+  dividendMonthlyExempt: number; // R$ por empresa por mês
+  dividendRateAbove: number; // % sobre o TOTAL do mês quando acima do limite
+  fiiExemptDefault: boolean; // rendimento de FII isento por padrão (requisitos cumpridos)
+  fiiRateIfNotExempt: number; // %
+  stockSwingRate: number; // ganho de capital ações (%)
+  stockSwingMonthlyExempt: number; // isenção por vendas no mês (R$)
+  dayTradeRate: number;
+  fiiGainRate: number;
+  etfGainRate: number;
+  cryptoGainRate: number;
+  cryptoMonthlyExempt: number;
+}
+
+/** Limites da análise 360° (verde / amarelo / vermelho). */
+export interface Limits360 {
+  roeMin: number;
+  netDebtEbitdaYellow: number;
+  netDebtEbitdaRed: number;
+  utilityNetDebtEbitdaYellow: number;
+  utilityNetDebtEbitdaRed: number;
+  interestCoverageYellow: number;
+  interestCoverageRed: number;
+  shortTermDebtPct: number; // % da dívida vencendo em 12 meses
+  payoutYellow: number;
+  payoutRed: number;
+  fcfCoverageYellow: number;
+  dyTrapRatio: number; // DY atual ÷ DY médio 5a
+  fScoreMin: number;
+  altmanSafe: number;
+  altmanGrey: number;
+  minDailyLiquidity: number; // R$ mil/dia
+  fiiVacancyYellow: number;
+  fiiVacancyRed: number;
+  fiiDebtorConcentration: number;
+  fiiMinHolders: number; // alerta perto do mínimo de cotistas para isenção
+  fiiOverDistributionMonths: number;
+  staleDays: number; // dado defasado
+  commoditySectors: string[];
+  utilitySectors: string[];
+}
 
 export interface Settings {
   profile: {
@@ -412,6 +526,12 @@ export interface Settings {
   integrations: {
     brapiToken: string;
   };
+  tax: TaxRules;
+  dpa: { acao: DpaRef; fii: DpaRef; commodity: DpaRef };
+  bazinDy: number; // DY original de Bazin, exibido como referência
+  limits360: Limits360;
+  allocationBand: number; // banda de tolerância (± p.p.)
+  theme: 'sistema' | 'claro' | 'escuro';
 }
 
 export interface Macro {

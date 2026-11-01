@@ -19,7 +19,19 @@ export function Card({ title, sub, right, children, className = '', id }: { titl
   );
 }
 
-export function Stat({ label, value, sub, tone, tag }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'pos' | 'neg' | 'warn' | 'info'; tag?: ReactNode }) {
+/** Selo obrigatório de origem do dado: "Fonte · atualizado em dd/mm/aaaa hh:mm". */
+export function Seal({ source, at }: { source: string; at?: string | null }) {
+  const stale = at ? ageDays(at) > 7 : false;
+  return (
+    <div className={`seal ${stale ? 'stale' : ''}`} title={stale ? 'dado com mais de 7 dias' : undefined}>
+      {source}
+      {at ? ` · atualizado em ${dateTimeBR(at)}` : ''}
+      {stale ? ' · defasado' : ''}
+    </div>
+  );
+}
+
+export function Stat({ label, value, sub, tone, tag, seal }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: 'pos' | 'neg' | 'warn' | 'info'; tag?: ReactNode; seal?: { source: string; at?: string | null } }) {
   return (
     <div className={`stat ${tone ? 't-' + tone : ''}`}>
       <div className="stat-l">
@@ -27,7 +39,18 @@ export function Stat({ label, value, sub, tone, tag }: { label: ReactNode; value
       </div>
       <div className="stat-v mono">{value}</div>
       {sub && <div className="stat-s">{sub}</div>}
+      {seal && <Seal {...seal} />}
     </div>
+  );
+}
+
+/** Ícone "por que isso importa": mostra o fundamento (lei, norma ou estudo) ao passar o mouse ou tocar. */
+export function Why({ text }: { text: string }) {
+  return (
+    <details className="why">
+      <summary aria-label="Por que isso importa" title={text}>?</summary>
+      <div className="why-pop">{text}</div>
+    </details>
   );
 }
 

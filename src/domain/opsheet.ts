@@ -29,6 +29,10 @@ const TRADE_FIELDS: SheetField[] = [
   { key: 'valorLiquido', header: 'Valor líquido da operação', required: false, aliases: ['valor liquido', 'liquido'] },
   { key: 'observacoes', header: 'Observações', required: false, aliases: ['observacao', 'obs', 'notas', 'comentario'] },
   { key: 'idOperacao', header: 'Identificador da operação', required: false, aliases: ['id', 'identificador', 'id da operacao', 'codigo da operacao', 'numero da nota', 'nota'] },
+  { key: 'corretagem', header: 'Corretagem', required: false, aliases: ['taxa de corretagem'] },
+  { key: 'emolumentos', header: 'Emolumentos', required: false, aliases: ['emolumento'] },
+  { key: 'taxaLiquidacao', header: 'Taxa de liquidação', required: false, aliases: ['liquidacao', 'taxa liquidacao'] },
+  { key: 'fonte', header: 'Fonte', required: false, aliases: ['origem do dado', 'origem'], help: 'B3, nota de corretagem ou manual' },
 ];
 
 export const SHEETS: Record<OpCategory, { tab: string; fields: SheetField[]; hint: string }> = {
@@ -88,7 +92,7 @@ export const SHEETS: Record<OpCategory, { tab: string; fields: SheetField[]; hin
   },
   eventos: {
     tab: '07 - Eventos Corporativos',
-    hint: 'Bonificação, Desdobramento, Grupamento, Subscrição, Amortização ou Outro. Desdobramento 1→2: fator 2. Grupamento 10→1: fator 10.',
+    hint: 'Bonificação, Desdobramento, Grupamento, Subscrição, Direitos de subscrição, Troca de ticker, Incorporação, Cisão, Leilão de frações, Amortização ou Outro. Desdobramento 1→2: fator 2. Grupamento 10→1: fator 10.',
     fields: [
       { key: 'ativo', header: 'Ativo', required: true, aliases: ['ticker', 'papel'] },
       { key: 'tipoEvento', header: 'Tipo de evento', required: true, aliases: ['evento', 'tipo'] },
@@ -97,7 +101,10 @@ export const SHEETS: Record<OpCategory, { tab: string; fields: SheetField[]; hin
       { key: 'qtdDelta', header: 'Quantidade adicionada ou retirada', required: false, aliases: ['quantidade adicionada', 'quantidade', 'qtd', 'variacao'] },
       { key: 'fator', header: 'Fator de conversão', required: false, aliases: ['fator', 'proporcao'] },
       { key: 'observacoes', header: 'Observações', required: false, aliases: ['observacao', 'obs'] },
-      { key: 'custoUnitario', header: 'Custo unitário atribuído', required: false, aliases: ['custo unitario', 'preco de subscricao', 'valor unitario', 'preco'], help: 'Bonificação: custo divulgado pela empresa. Subscrição: preço pago.' },
+      { key: 'custoUnitario', header: 'Custo unitário atribuído', required: false, aliases: ['custo unitario', 'preco de subscricao', 'valor unitario', 'preco'], help: 'Bonificação: custo divulgado pela empresa. Subscrição: preço de emissão.' },
+      { key: 'ativoDestino', header: 'Ativo de destino', required: false, aliases: ['novo ticker', 'destino', 'ticker novo'], help: 'Troca de ticker, incorporação e cisão (ex.: TRPL4 → ISAE4)' },
+      { key: 'percentualCusto', header: 'Percentual do custo transferido', required: false, aliases: ['percentual do custo', '% do custo'], help: 'Cisão: parcela do custo que vai para o novo ativo' },
+      { key: 'valorRecebido', header: 'Valor recebido', required: false, aliases: ['valor do leilao', 'valor'], help: 'Leilão de frações: valor creditado' },
       { key: 'idOperacao', header: 'Identificador da operação', required: false, aliases: ['id', 'identificador'] },
     ],
   },
@@ -210,7 +217,7 @@ export interface ImportRecord {
   values: Record<string, unknown>; // valores lidos (editáveis na conferência)
   tx: Transaction | null;
   issues: Issue[];
-  status: 'ok' | 'aviso' | 'erro' | 'duplicada';
+  status: 'ok' | 'aviso' | 'erro' | 'duplicada' | 'conciliacao';
   include: boolean;
   newTicker?: string | null;
 }
@@ -274,6 +281,10 @@ function resolveAsset(ctx: Ctx, raw: unknown, cls: AssetClass | null, issues: Is
 }
 
 const num = (v: unknown) => parseNum(v);
+const sourceOf = (v: unknown): Transaction['source'] => {
+  const s = norm(v);
+  return /b3|bolsa|investidor/.test(s) ? 'B3' : /nota|corretag/.test(s) ? 'nota' : s ? 'manual' : 'importacao';
+};
 const close = (a: number, b: number, tol = 0.02) => Math.abs(a - b) <= Math.max(tol, Math.abs(b) * 0.005);
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
 
@@ -301,7 +312,13 @@ export function convertRow(cat: OpCategory, v: Record<string, unknown>, ctx: Ctx
     const qty = num(v.quantidade);
     let price = num(v.precoUnitario);
     let gross = num(v.total);
-    const fees = num(v.taxas) ?? 0;
+    const corretagem = num(v.corretagem);
+    const emolumentos = num(v.emolumentos);
+    const taxaLiq = num(v.taxaLiquidacao);
+    const parts = [corretagem, emolumentos, taxaLiq].filter((x): x is number => x !== null);
+    const feesInformed = num(v.taxas);
+    const fees = feesInformed ?? (parts.length ? parts.reduce((x, y) => x + y, 0) : 0);
+    if (feesInformed !== null && parts.length && !close(feesInformed, parts.reduce((x, y) => x + y, 0), 0.01)) warn('Taxas e emolumentos diverge da soma de corretagem + emolumentos + taxa de liquidação.');
     const net = num(v.valorLiquido);
     if (qty === null) err('Quantidade ausente.');
     else if (qty <= 0) err(`Quantidade ${qty} inválida (deve ser positiva; o sentido vem do Tipo de ordem).`);
@@ -323,7 +340,7 @@ export function convertRow(cat: OpCategory, v: Record<string, unknown>, ctx: Ctx
     const declared = num(v.quantidadeTotal);
     if (issues.some((i) => i.level === 'erro') || !date || !type || !qty || gross === null) return { tx: null, issues, newTicker };
     return {
-      tx: { ...baseTx(cat, v), date, type, assetId: asset.assetId, ticker: asset.ticker, qty, price, fees, gross, amount: net ?? computedNet!, broker: str(v.corretora) || null, declaredPosition: declared },
+      tx: { ...baseTx(cat, v), date, type, assetId: asset.assetId, ticker: asset.ticker, qty, price, fees, corretagem, emolumentos, taxaLiquidacao: taxaLiq, gross, amount: net ?? computedNet!, broker: str(v.corretora) || null, declaredPosition: declared, source: sourceOf(v.fonte) },
       issues,
       newTicker,
     };
@@ -413,7 +430,7 @@ export function convertRow(cat: OpCategory, v: Record<string, unknown>, ctx: Ctx
 
   if (cat === 'eventos') {
     const t = norm(v.tipoEvento);
-    const type: TxType = /bonific/.test(t) ? 'bonificacao' : /desdobr|split/.test(t) ? 'desdobramento' : /grupam|inplit|agrupa/.test(t) ? 'grupamento' : /subscri/.test(t) ? 'subscricao' : /amortiz/.test(t) ? 'amortizacao' : 'evento_outro';
+    const type: TxType = /bonific/.test(t) ? 'bonificacao' : /desdobr|split/.test(t) ? 'desdobramento' : /grupam|inplit|agrupa/.test(t) ? 'grupamento' : /direito/.test(t) ? 'direito_subscricao' : /subscri/.test(t) ? 'subscricao' : /troca|mudanca de (ticker|codigo)|alteracao de codigo/.test(t) ? 'troca_ticker' : /incorpora/.test(t) ? 'incorporacao' : /cisao/.test(t) ? 'cisao' : /leilao|fracao/.test(t) ? 'leilao_fracao' : /amortiz/.test(t) ? 'amortizacao' : 'evento_outro';
     const date = parseDate(v.data);
     if (!date) err('Data do evento inválida ou ausente.');
     const asset = resolveAsset(ctx, v.ativo, null, issues);
@@ -430,10 +447,18 @@ export function convertRow(cat: OpCategory, v: Record<string, unknown>, ctx: Ctx
     if (type === 'bonificacao' && !unit) warn('Bonificação sem custo unitário atribuído: custo zero (revise).');
     if (type === 'amortizacao' && !(unit && before)) err('Amortização em eventos precisa de Custo unitário e Quantidade anterior (ou lance na aba Proventos com o valor recebido).');
     if (type === 'evento_outro') warn(`Evento "${str(v.tipoEvento)}" tratado como ajuste de quantidade e enviado para revisão.`);
+    let target: { assetId: string | null; ticker: string; newTicker: string | null } | null = null;
+    if (type === 'troca_ticker' || type === 'incorporacao' || type === 'cisao') {
+      if (!str(v.ativoDestino)) err('Informe o Ativo de destino (ex.: ISAE4).');
+      else target = resolveAsset(ctx, v.ativoDestino, null, issues);
+      if (type === 'cisao' && !num(v.percentualCusto)) err('Cisão: informe o percentual do custo transferido.');
+    }
+    if (type === 'leilao_fracao' && (!delta || !num(v.valorRecebido))) err('Leilão de frações: informe a quantidade vendida e o valor recebido.');
     if (factor !== null && factor <= 0) err('Fator de conversão deve ser positivo.');
     if (issues.some((i) => i.level === 'erro') || !date) return { tx: null, issues, newTicker };
-    const amount = type === 'amortizacao' ? unit! * before! : delta && unit ? Math.abs(delta) * unit : 0;
-    return { tx: { ...baseTx(cat, v), date, type, assetId: asset.assetId, ticker: asset.ticker, qty: delta, qtyBefore: before, factor, price: unit, amount }, issues, newTicker };
+    const amount = type === 'amortizacao' ? unit! * before! : type === 'leilao_fracao' ? (num(v.valorRecebido) as number) : delta && unit ? Math.abs(delta) * unit : 0;
+    const extra: Partial<Transaction> = target ? { targetAssetId: target.assetId, costShare: num(v.percentualCusto), ...({ _targetTicker: target.ticker } as any) } : {};
+    return { tx: { ...baseTx(cat, v), date, type, assetId: asset.assetId, ticker: asset.ticker, qty: type === 'leilao_fracao' ? Math.abs(delta!) : delta, qtyBefore: before, factor, price: unit, amount, ...extra }, issues, newTicker };
   }
 
   // transferências e ajustes
@@ -489,6 +514,7 @@ export interface BuildResult {
     withIssues: number;
     errors: number;
     duplicates: number;
+    conciliations: number;
     toImport: number;
     byCategory: Partial<Record<OpCategory, number>>;
     volume: number;
@@ -541,12 +567,25 @@ export function buildRecords(inp: BuildInput): BuildResult {
   const plannedIds = new Map<string, string>();
   for (const p of ctx.planned.values()) plannedIds.set(p.ticker, 'novo:' + p.ticker);
   for (const r of records) if (r.tx && !r.tx.assetId && r.newTicker) r.tx.assetId = plannedIds.get(r.newTicker) || null;
+  for (const r of records) if (r.tx && !r.tx.targetAssetId && (r.tx as any)._targetTicker) r.tx.targetAssetId = plannedIds.get((r.tx as any)._targetTicker) || null;
   for (const r of records) if (r.tx && r.tx.category === undefined) r.tx.category = r.category || undefined;
   for (const r of records) {
     if (!r.tx) continue;
     const cls = r.newTicker ? ctx.planned.get(r.newTicker)?.cls : inp.assets.find((a) => a.id === r.tx!.assetId)?.class;
     if (r.tx.type === 'compra' || r.tx.type === 'venda' || r.tx.type === 'saldo_inicial') r.tx.category = categoryOf(r.tx, cls);
     r.category = r.tx.category!;
+  }
+
+  // conciliação: provento do extrato que corresponde a um lançamento AUTOMÁTICO (mesmo ativo, tipo e data de pagamento)
+  const autos = inp.existing.filter((t) => t.auto);
+  for (const r of records) {
+    if (!r.tx || !(['dividendo', 'jcp', 'rendimento', 'amortizacao', 'outro_provento'] as TxType[]).includes(r.tx.type)) continue;
+    const m = autos.find((t) => t.assetId === r.tx!.assetId && (t.type === r.tx!.type || r.tx!.type === 'outro_provento') && (t.payDate || t.date) === r.tx!.date);
+    if (!m) continue;
+    const diff = Math.round((r.tx.amount - m.amount) * 100) / 100;
+    r.status = 'conciliacao';
+    (r as any).match = { txId: m.id, diff, extractValue: r.tx.amount };
+    r.issues.push(Math.abs(diff) <= 0.01 ? { level: 'aviso', msg: `Confere com o provento automático (${m.amount.toFixed(2)}): será marcado como CONFERIDO.` } : { level: 'aviso', msg: `Difere do provento automático em R$ ${diff.toFixed(2)}: vira pendência de conciliação.` });
   }
 
   // duplicidades: impressão digital exata e semelhança forte com o que já existe
@@ -556,6 +595,7 @@ export function buildRecords(inp: BuildInput): BuildResult {
   const fps = assignFingerprints(withTx.map((r) => r.tx!));
   withTx.forEach((r, i) => {
     r.tx = fps[i];
+    if (r.status === 'conciliacao') return;
     if (existingFp.has(r.tx.fingerprint)) {
       r.status = 'duplicada';
       r.issues.push({ level: 'aviso', msg: 'Já registrada na plataforma (mesma operação). Não será importada de novo.' });
@@ -569,7 +609,7 @@ export function buildRecords(inp: BuildInput): BuildResult {
   for (const r of records) {
     const errs = r.issues.some((i) => i.level === 'erro') || !r.tx;
     if (errs) r.status = 'erro';
-    else if (r.status !== 'duplicada') r.status = r.issues.length ? 'aviso' : 'ok';
+    else if (r.status !== 'duplicada' && r.status !== 'conciliacao') r.status = r.issues.length ? 'aviso' : 'ok';
     const def = r.status === 'ok' || r.status === 'aviso';
     r.include = r.status === 'erro' ? false : inp.includes[r.key] ?? def;
   }
@@ -608,7 +648,7 @@ export function buildRecords(inp: BuildInput): BuildResult {
     byCategory[r.category!] = (byCategory[r.category!] || 0) + 1;
     volume += Math.abs(r.tx!.amount || 0);
   }
-  const usedNew = new Set(included.map((r) => r.newTicker).filter(Boolean) as string[]);
+  const usedNew = new Set([...included.map((r) => r.newTicker), ...included.map((r) => (r.tx as any)?._targetTicker)].filter(Boolean) as string[]);
   return {
     records,
     newAssets: [...ctx.planned.values()].filter((p) => usedNew.has(p.ticker)).map((p) => ({ ...p, cls: inp.classOverride[p.ticker] || p.cls })),
@@ -618,6 +658,7 @@ export function buildRecords(inp: BuildInput): BuildResult {
       withIssues: records.filter((r) => r.status === 'aviso').length,
       errors: records.filter((r) => r.status === 'erro').length,
       duplicates: records.filter((r) => r.status === 'duplicada').length,
+      conciliations: records.filter((r) => r.status === 'conciliacao').length,
       toImport: included.length,
       byCategory,
       volume,
@@ -648,6 +689,8 @@ export function materialize(res: BuildResult): { txs: Transaction[]; assets: Ass
     .map((r) => {
       const tx = { ...r.tx! };
       if (tx.assetId && ids.has(tx.assetId)) tx.assetId = ids.get(tx.assetId)!;
+      if (tx.targetAssetId && ids.has(tx.targetAssetId)) tx.targetAssetId = ids.get(tx.targetAssetId)!;
+      delete (tx as any)._targetTicker;
       return tx;
     });
   return { txs, assets };
@@ -671,7 +714,7 @@ export function exportRows(txs: Transaction[], assets: Asset[]): Record<OpCatego
     const tk = a?.ticker || t.ticker || '';
     const cat = t.category || categoryOf(t, a?.class);
     if (cat === 'acoes' || cat === 'fiis' || cat === 'etfs') {
-      row(cat, { ativo: tk, tipoInvestimento: a ? CLASS_TXT[a.class] : '', tipoOrdem: TX_LABEL[t.type], quantidade: t.qty ?? '', precoUnitario: t.price ?? '', total: t.gross ?? (t.qty && t.price ? +(t.qty * t.price).toFixed(2) : ''), quantidadeTotal: t.declaredPosition ?? '', data: d(t.date), corretora: t.broker || '', taxas: t.fees || '', valorLiquido: +t.amount.toFixed(2), observacoes: t.notes || '', idOperacao: t.extId || '' });
+      row(cat, { ativo: tk, tipoInvestimento: a ? CLASS_TXT[a.class] : '', tipoOrdem: TX_LABEL[t.type], quantidade: t.qty ?? '', precoUnitario: t.price ?? '', total: t.gross ?? (t.qty && t.price ? +(t.qty * t.price).toFixed(2) : ''), quantidadeTotal: t.declaredPosition ?? '', data: d(t.date), corretora: t.broker || '', taxas: t.fees || '', valorLiquido: +t.amount.toFixed(2), observacoes: t.notes || '', idOperacao: t.extId || '', corretagem: t.corretagem ?? '', emolumentos: t.emolumentos ?? '', taxaLiquidacao: t.taxaLiquidacao ?? '', fonte: t.source === 'B3' ? 'B3' : t.source === 'nota' ? 'Nota de corretagem' : t.source ? 'Manual' : '' });
     } else if (cat === 'renda_fixa') {
       const app = t.type === 'compra';
       const mv = t.type === 'juros' ? 'Juros' : app ? 'Aplicação' : t.rfMovement === 'resgate_parcial' ? 'Resgate parcial' : t.rfMovement === 'vencimento' ? 'Vencimento' : 'Resgate total';
@@ -681,7 +724,7 @@ export function exportRows(txs: Transaction[], assets: Asset[]): Record<OpCatego
     } else if (cat === 'aportes') {
       row(cat, { data: d(t.date), valor: +t.amount.toFixed(2), origem: t.origin || '', instituicaoOrigem: t.fromInstitution || '', destino: t.destination || t.broker || '', tipoMovimentacao: t.type === 'aporte' ? 'Aporte' : t.type === 'retirada' ? 'Retirada' : 'Reinvestimento', observacoes: t.notes || '', idOperacao: t.extId || '' });
     } else if (cat === 'eventos') {
-      row(cat, { ativo: tk, tipoEvento: TX_LABEL[t.type], data: d(t.date), qtdAnterior: t.qtyBefore ?? '', qtdDelta: t.qty ?? '', fator: t.factor ?? '', observacoes: t.notes || '', custoUnitario: t.price ?? '', idOperacao: t.extId || '' });
+      row(cat, { ativo: tk, tipoEvento: TX_LABEL[t.type], data: d(t.date), qtdAnterior: t.qtyBefore ?? '', qtdDelta: t.qty ?? '', fator: t.factor ?? '', observacoes: t.notes || '', custoUnitario: t.price ?? '', ativoDestino: t.targetAssetId ? byId.get(t.targetAssetId)?.ticker || '' : '', percentualCusto: t.costShare ?? '', valorRecebido: t.type === 'leilao_fracao' ? +t.amount.toFixed(2) : '', idOperacao: t.extId || '' });
     } else {
       row('transferencias', { ativo: tk || 'Recursos', instituicaoOrigem: t.fromInstitution || '', instituicaoDestino: t.toInstitution || '', tipoMovimentacao: t.type === 'ajuste' ? 'Ajuste de quantidade' : tk ? 'Transferência de custódia' : 'Transferência de recursos', quantidade: t.qty ?? t.amount, data: d(t.date), observacoes: t.notes || '', idOperacao: t.extId || '' });
     }
@@ -696,9 +739,12 @@ export function convertForForm(cat: OpCategory, values: Record<string, unknown>,
   const ctx: Ctx = { byTicker: new Map(assets.map((a) => [a.ticker.toUpperCase(), a])), byName: new Map(assets.map((a) => [norm(a.name), a])), planned: new Map(), classOverride };
   const { tx, issues, newTicker } = convertRow(cat, values, ctx);
   const plan = newTicker ? ctx.planned.get(newTicker) || null : null;
+  const tt = tx ? (tx as any)._targetTicker : null;
+  const newTarget = tt && tx && !tx.targetAssetId ? ctx.planned.get(tt) || null : null;
+  if (tx) delete (tx as any)._targetTicker;
   if (tx && plan) tx.category = categoryOf(tx, plan.cls);
   else if (tx) tx.category = categoryOf(tx, assets.find((a) => a.id === tx.assetId)?.class);
-  return { tx, issues, newAsset: plan };
+  return { tx, issues, newAsset: plan, newTarget };
 }
 
 /** Valores de formulário (chaves dos campos da planilha) a partir de uma operação gravada. */
@@ -724,9 +770,10 @@ export const FIELD_OPTIONS: Record<string, string[]> = {
   'proventos.tipoInvestimento': ['Ação', 'FII', 'ETF'],
   'proventos.tipoProvento': ['Dividendos', 'JCP', 'Rendimentos', 'Amortização', 'Outros'],
   'aportes.tipoMovimentacao': ['Aporte', 'Retirada', 'Reinvestimento'],
-  'eventos.tipoEvento': ['Bonificação', 'Desdobramento', 'Grupamento', 'Subscrição', 'Amortização', 'Outro'],
+  'eventos.tipoEvento': ['Bonificação', 'Desdobramento', 'Grupamento', 'Subscrição', 'Direitos de subscrição', 'Troca de ticker', 'Incorporação', 'Cisão', 'Leilão de frações', 'Amortização', 'Outro'],
+  'trade.fonte': ['B3', 'Nota de corretagem', 'Manual'],
   'transferencias.tipoMovimentacao': ['Transferência de custódia', 'Transferência de recursos', 'Ajuste de quantidade'],
 };
 export const optionsFor = (cat: OpCategory, key: string) => FIELD_OPTIONS[`${cat === 'acoes' || cat === 'fiis' || cat === 'etfs' ? 'trade' : cat}.${key}`];
 export const DATE_KEYS = new Set(['data', 'dataCom', 'dataPagamento', 'dataAplicacao', 'vencimento', 'dataResgate']);
-export const NUM_KEYS = new Set(['quantidade', 'precoUnitario', 'total', 'quantidadeTotal', 'taxas', 'valorLiquido', 'valorAplicado', 'taxa', 'valorResgatado', 'valorUnitario', 'valorTotal', 'valor', 'qtdAnterior', 'qtdDelta', 'fator', 'custoUnitario']);
+export const NUM_KEYS = new Set(['corretagem', 'emolumentos', 'taxaLiquidacao', 'percentualCusto', 'valorRecebido', 'quantidade', 'precoUnitario', 'total', 'quantidadeTotal', 'taxas', 'valorLiquido', 'valorAplicado', 'taxa', 'valorResgatado', 'valorUnitario', 'valorTotal', 'valor', 'qtdAnterior', 'qtdDelta', 'fator', 'custoUnitario']);

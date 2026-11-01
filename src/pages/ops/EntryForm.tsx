@@ -45,7 +45,12 @@ function visible(cat: OpCategory, key: string, v: Record<string, unknown>): bool
     if (key === 'custoUnitario') return /Bonific|Subscri|Amortiz/.test(t);
     if (key === 'fator') return /Desdobr|Grupam|Bonific/.test(t);
   }
-  if (cat === 'transferencias' && key === 'instituicaoOrigem') return true;
+  if (cat === 'eventos') {
+    const t = String(v.tipoEvento || '');
+    if (key === 'ativoDestino') return /Troca|Incorpora|Cis/.test(t);
+    if (key === 'percentualCusto') return /Cis/.test(t);
+    if (key === 'valorRecebido') return /Leil/.test(t);
+  }
   return true;
 }
 
@@ -54,6 +59,7 @@ export function EntryForm({ initialCat = 'acoes', preset, editing, onDone }: { i
   const [cat, setCat] = useState<OpCategory>(editing?.cat || initialCat);
   const [values, setValues] = useState<Record<string, unknown>>(editing?.values || defaults(initialCat, preset));
   const [dupOf, setDupOf] = useState<Transaction | null>(null);
+  const [reason, setReason] = useState('');
   useEffect(() => {
     if (!editing) setValues(defaults(cat, preset));
     setDupOf(null);
@@ -93,11 +99,18 @@ export function EntryForm({ initialCat = 'acoes', preset, editing, onDone }: { i
       addAsset(na);
       assetId = na.id;
     }
-    const final: Transaction = { ...tx, assetId };
+    let targetAssetId = tx.targetAssetId ?? null;
+    if (result.newTarget && !targetAssetId) {
+      const nt = planToAsset(result.newTarget);
+      addAsset(nt);
+      targetAssetId = nt.id;
+    }
+    const final: Transaction = { ...tx, assetId, targetAssetId, source: tx.source && tx.source !== 'importacao' ? tx.source : 'manual' };
     if (editing) {
+      if (reason.trim().length < 3) return toast('Informe o motivo da correção.', true);
       const { id: _drop, createdAt: _c, fingerprint: _f, ...patch } = final;
-      updateTransaction(editing.tx.id, { ...patch, importId: editing.tx.importId ?? null });
-      toast('Operação atualizada. Carteira e módulos recalculados.');
+      updateTransaction(editing.tx.id, { ...patch, importId: editing.tx.importId ?? null }, reason.trim());
+      toast('Correção registrada (estorno + novo lançamento). Carteira e módulos recalculados.');
       onDone?.();
       return;
     }
@@ -200,10 +213,16 @@ export function EntryForm({ initialCat = 'acoes', preset, editing, onDone }: { i
           </div>
         </div>
       )}
+      {editing && (
+        <label className="field">
+          <span className="field-l">Motivo da correção *</span>
+          <input id="op-motivo" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="ex.: preço digitado errado" />
+        </label>
+      )}
       <div className="row" style={{ justifyContent: 'flex-end' }}>
         {onDone && editing && <button className="btn ghost" onClick={onDone}>Cancelar</button>}
         <button className="btn primary" disabled={!result.tx || errors.length > 0} onClick={() => submit(false)}>
-          {editing ? 'Salvar alterações' : 'Confirmar lançamento'}
+          {editing ? 'Registrar correção' : 'Confirmar lançamento'}
         </button>
       </div>
     </div>

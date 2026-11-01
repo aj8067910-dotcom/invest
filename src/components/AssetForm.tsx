@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Asset, AssetClass, FiiType } from '../domain/types';
-import { CLASS_LABEL, CLASS_ORDER, FII_TYPE_LABEL } from '../domain/types';
+import { CLASS_LABEL, CLASS_ORDER, EXPOSURE_LABEL, FII_TYPE_LABEL, type Exposure } from '../domain/types';
+import { isNum } from '../domain/util';
 import { Field, NumInput } from './ui';
 
 export function AssetForm({ initial, onSave, onCancel, isNew }: { initial: Asset; onSave: (a: Asset) => void; onCancel?: () => void; isNew?: boolean }) {
@@ -13,7 +14,7 @@ export function AssetForm({ initial, onSave, onCancel, isNew }: { initial: Asset
     if (c === 'cripto' && !a.crypto) p.crypto = { role: '', coingeckoId: '', custody: '' };
     up(p);
   };
-  const valid = a.ticker.trim().length >= 2;
+  const valid = a.ticker.trim().length >= 2 && (!isNum(a.interestPrice) || !!a.interestNote?.trim());
   return (
     <form
       onSubmit={(e) => {
@@ -123,8 +124,46 @@ export function AssetForm({ initial, onSave, onCancel, isNew }: { initial: Asset
             <Field label="Custódia"><input value={a.crypto.custody} onChange={(e) => up({ crypto: { ...a.crypto!, custody: e.target.value } })} /></Field>
           </>
         )}
+        <Field label="Peso-alvo na carteira" hint="Vazio = limite máximo por ativo (Parâmetros)">
+          <NumInput value={a.targetWeight ?? null} suffix="%" onChange={(v) => up({ targetWeight: v })} />
+        </Field>
+        <Field label="Exposição econômica" hint="Ex.: BOVX11 = ações Brasil">
+          <select value={a.exposure || ''} onChange={(e) => up({ exposure: (e.target.value || null) as Exposure | null })}>
+            <option value="">automática</option>
+            {Object.entries(EXPOSURE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="Reserva de emergência" hint="Fica fora do cálculo de alocação">
+          <label className="chk" style={{ padding: '7px 0' }}><input type="checkbox" checked={!!a.isReserve} onChange={(e) => up({ isReserve: e.target.checked })} /> é reserva</label>
+        </Field>
+        {a.class === 'fii' && (
+          <Field label="Isenção de IR do rendimento" hint="Lei 14.754/2023: ≥ 100 cotistas, cotas em bolsa, sua participação < 10%">
+            <select value={a.fiiTaxExempt === false ? 'nao' : 'sim'} onChange={(e) => up({ fiiTaxExempt: e.target.value === 'sim' })}>
+              <option value="sim">cumpre os requisitos (isento)</option>
+              <option value="nao">não cumpre (tributado)</option>
+            </select>
+          </Field>
+        )}
+        <Field label="Preço de interesse (manual)" hint="Vazio = preço de oportunidade calculado">
+          <NumInput value={a.interestPrice ?? null} onChange={(v) => up({ interestPrice: v, interestDate: v ? a.interestDate || new Date().toISOString().slice(0, 10) : null })} />
+        </Field>
+        {isNum(a.interestPrice) && (
+          <>
+            <Field label="Justificativa do preço de interesse"><input value={a.interestNote || ''} onChange={(e) => up({ interestNote: e.target.value })} required /></Field>
+            <Field label="Data do preço de interesse"><input type="date" value={a.interestDate || ''} onChange={(e) => up({ interestDate: e.target.value })} /></Field>
+          </>
+        )}
         <Field label="Tese de investimento" wide>
           <textarea value={a.thesis} onChange={(e) => up({ thesis: e.target.value })} placeholder="Por que tenho este ativo? O que me faria vender?" />
+        </Field>
+        <Field label="Riscos" wide>
+          <textarea value={a.risks || ''} onChange={(e) => up({ risks: e.target.value })} placeholder="O que pode dar errado?" />
+        </Field>
+        <Field label="Catalisadores" wide>
+          <textarea value={a.catalysts || ''} onChange={(e) => up({ catalysts: e.target.value })} placeholder="O que pode destravar valor?" />
+        </Field>
+        <Field label="Gatilhos de revisão (data e descrição)" wide hint="Um por linha: aaaa-mm-dd descrição">
+          <textarea defaultValue={(a.triggers || []).map((t) => `${t.date} ${t.text}`).join('\n')} onBlur={(e) => up({ triggers: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => ({ id: l, date: (l.match(/^\d{4}-\d{2}-\d{2}/) || [''])[0], text: l.replace(/^\d{4}-\d{2}-\d{2}\s*/, '') })).filter((t) => t.date) })} />
         </Field>
         <Field label="Notas" wide>
           <textarea value={a.notes} onChange={(e) => up({ notes: e.target.value })} />

@@ -3,13 +3,28 @@
 import type { Asset, AssetClass, OpCategory, Transaction, TxType } from './types';
 import { EVENT_TX, INCOME_TX } from './types';
 
+/**
+ * Livro só de inclusão: um lançamento corrigido não é apagado — recebe um ESTORNO
+ * (lançamento do tipo 'estorno' com `reversalOf`) e, se for o caso, um novo lançamento.
+ * Esta função devolve só o que vale para os cálculos.
+ */
+export function activeTransactions(txs: Transaction[]): Transaction[] {
+  const reversed = new Set<string>();
+  for (const t of txs) if (t.type === 'estorno' && t.reversalOf) reversed.add(t.reversalOf);
+  if (!reversed.size && !txs.some((t) => t.type === 'estorno')) return txs;
+  return txs.filter((t) => t.type !== 'estorno' && !reversed.has(t.id));
+}
+
+/** Provento conta como RECEBIDO só quando a data de pagamento já passou (provisionado não conta). */
+export const isReceived = (t: Transaction, asOf: string) => !(t.auto && !t.payDate) && t.date <= asOf;
+
 export function categoryOf(t: Pick<Transaction, 'type' | 'rfMovement'>, assetClass?: AssetClass | null): OpCategory {
   if (INCOME_TX.includes(t.type) && t.type !== 'juros') return 'proventos';
   if (t.type === 'juros') return assetClass === 'tesouro' ? 'renda_fixa' : 'proventos';
   if (t.type === 'amortizacao') return assetClass === 'tesouro' ? 'renda_fixa' : 'proventos';
   if (t.type === 'aporte' || t.type === 'retirada' || t.type === 'reinvestimento') return 'aportes';
   if (EVENT_TX.includes(t.type)) return 'eventos';
-  if (t.type === 'transferencia' || t.type === 'ajuste') return 'transferencias';
+  if (t.type === 'transferencia' || t.type === 'ajuste' || t.type === 'estorno') return 'transferencias';
   if (assetClass === 'tesouro' || t.rfMovement) return 'renda_fixa';
   if (assetClass === 'fii') return 'fiis';
   if (assetClass === 'etf') return 'etfs';
@@ -20,13 +35,21 @@ const r2 = (v: number | null | undefined) => (v === null || v === undefined || !
 const r6 = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? '' : String(Math.round(v * 1e6) / 1e6));
 
 /**
- * Base da impressão digital: o "Identificador da operação" quando informado; senão os campos
- * que definem a operação. Operações idênticas no mesmo dia recebem sufixo #2, #3…
+ * Chave de duplicidade (impressão digital):
+ * - "Identificador da operação", quando informado;
+ * - proventos: ativo + tipo + data-com + data de pagamento;
+ * - operações: data do pregão + ticker + tipo + quantidade + preço + corretora;
+ * - demais: data + tipo + ativo + quantidade + valor.
+ * Operações idênticas no mesmo dia recebem sufixo #2, #3… O hash do arquivo fica no lote de importação.
  */
 export function fingerprintBase(t: Transaction): string {
   const cat = t.category || categoryOf(t);
+  const tk = (t.ticker || '').toUpperCase();
   if (t.extId) return `${cat}|id:${String(t.extId).trim().toLowerCase()}`;
-  return [cat, t.date, t.type, (t.ticker || '').toUpperCase(), r6(t.qty), r6(t.price), r2(t.amount), (t.broker || '').trim().toLowerCase(), t.rfMovement || '', t.exDate || ''].join('|');
+  if (INCOME_TX.includes(t.type) || t.type === 'amortizacao') return ['prov', tk, t.type, t.exDate || '', t.payDate || t.date].join('|');
+  if (t.type === 'compra' || t.type === 'venda' || t.type === 'saldo_inicial')
+    return [cat, t.date, tk, t.type, r6(t.qty), r6(t.price ?? (t.qty ? t.amount / t.qty : null)), (t.broker || '').trim().toLowerCase(), t.rfMovement || '', t.qty ? '' : r2(t.amount)].join('|');
+  return [cat, t.date, t.type, tk, r6(t.qty), r2(t.amount), t.reversalOf || '', t.targetAssetId || ''].join('|');
 }
 
 /** Atribui impressões digitais com contador de ocorrência, na ordem dada. */
@@ -43,6 +66,10 @@ export function assignFingerprints<T extends Transaction>(txs: T[], start?: Map<
 /** Ordem de processamento dentro do mesmo dia: abertura → eventos → compras → vendas → demais. */
 const RANK: Partial<Record<TxType, number>> = {
   saldo_inicial: 0,
+  troca_ticker: 1,
+  incorporacao: 1,
+  cisao: 1,
+  direito_subscricao: 1,
   desdobramento: 1,
   grupamento: 1,
   bonificacao: 1,
@@ -52,6 +79,7 @@ const RANK: Partial<Record<TxType, number>> = {
   ajuste: 3,
   transferencia: 3,
   venda: 4,
+  leilao_fracao: 4,
 };
 export const txOrder = (a: Transaction, b: Transaction) =>
   a.date.localeCompare(b.date) || (RANK[a.type] ?? 5) - (RANK[b.type] ?? 5) || (a.createdAt || '').localeCompare(b.createdAt || '');
@@ -69,9 +97,13 @@ export function normalizeTx(t: Transaction, assets: Asset[]): Transaction {
   };
 }
 
-/** Migração: operações antigas ganham categoria, carimbo e impressão digital. */
-export function migrateTransactions(txs: Transaction[], assets: Asset[]): Transaction[] {
-  const norm = txs.map((t) => (t.category && t.fingerprint && t.createdAt ? t : normalizeTx({ ...t, createdAt: t.createdAt || '2000-01-01T00:00:00.000Z' }, assets)));
+/**
+ * Migração: operações antigas ganham categoria, carimbo e impressão digital.
+ * `refingerprint` recalcula as impressões digitais com a regra vigente (migração de esquema).
+ */
+export function migrateTransactions(txs: Transaction[], assets: Asset[], refingerprint = false): Transaction[] {
+  const base = refingerprint ? txs.map((t) => ({ ...t, fingerprint: undefined })) : txs;
+  const norm = base.map((t) => (t.category && t.fingerprint && t.createdAt ? t : normalizeTx({ ...t, createdAt: t.createdAt || '2000-01-01T00:00:00.000Z' }, assets)));
   const missing = norm.filter((t) => !t.fingerprint);
   if (!missing.length) return norm;
   const counts = new Map<string, number>();

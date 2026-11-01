@@ -1,6 +1,7 @@
 // Séries históricas reconstruídas a partir do livro de operações.
 import type { Transaction } from '../types';
 import { INCOME_TX } from '../types';
+import { activeTransactions, isReceived } from '../ledger';
 import type { Position } from './positions';
 import { addMonths, monthKey, todayISO } from '../util';
 
@@ -25,7 +26,7 @@ export function monthlyCashflows(txs: Transaction[], asOf = todayISO()): CashMon
     idx.set(monthKey(d), rows.length);
     rows.push(emptyMonth(monthKey(d)));
   }
-  for (const t of txs) {
+  for (const t of activeTransactions(txs)) {
     const i = idx.get(monthKey(t.date));
     if (i === undefined) continue;
     const r = rows[i];
@@ -36,7 +37,7 @@ export function monthlyCashflows(txs: Transaction[], asOf = todayISO()): CashMon
       r.compras += t.amount;
       if (t.reinvest) r.reinvestido += t.amount;
     } else if (t.type === 'venda') r.vendas += t.amount;
-    else if (INCOME_TX.includes(t.type)) r.proventos += t.amount;
+    else if (INCOME_TX.includes(t.type) && isReceived(t, asOf)) r.proventos += t.amount;
   }
   return rows;
 }

@@ -3,6 +3,7 @@ import type { Asset, ImportBatch, OpCategory, Transaction } from '../domain/type
 import { OP_CATEGORY_LABEL } from '../domain/types';
 import { SHEETS, exportRows, materialize, type BuildResult, type RawSheet } from '../domain/opsheet';
 import { useStore } from '../store/store';
+import { probableCause, type Conciliation } from '../domain/calc/proventos';
 import { todayISO, uid } from '../domain/util';
 import { download } from './io';
 
@@ -126,45 +127,47 @@ export interface RunProgress {
 }
 
 /**
- * Grava a importação em lotes de 500. Cada lote é atômico no banco local; o registro da
- * importação guarda o andamento. Se algo falhar, a importação fica "interrompida" e pode ser
- * retomada com o mesmo arquivo (o que já foi gravado é reconhecido e não se repete) ou revertida.
+ * Grava a importação numa ÚNICA operação atômica (tudo ou nada): todas as operações válidas,
+ * os ativos novos e as conciliações de proventos entram juntos, ou nada entra. O lote fica
+ * registrado (hash do arquivo) e pode ser revertido por estorno em lote. Reenviar o mesmo
+ * arquivo não duplica: a impressão digital de cada operação já gravada é reconhecida.
  */
-export async function runImport(res: BuildResult, fileName: string, fileHash: string, onProgress: (p: RunProgress) => void, resumeId?: string): Promise<ImportBatch> {
+export async function runImport(res: BuildResult, fileName: string, fileHash: string, onProgress: (p: RunProgress) => void): Promise<ImportBatch> {
   const st = useStore.getState();
-  const importId = resumeId || uid();
+  const importId = uid();
   const { txs, assets } = materialize(res);
-  const prev = st.imports.find((b) => b.id === importId);
-  const batch: ImportBatch = prev
-    ? { ...prev, status: 'em_andamento', toImport: prev.imported + txs.length }
-    : {
-        id: importId,
-        at: new Date().toISOString(),
-        fileName,
-        fileHash,
-        totalRows: res.stats.total,
-        toImport: txs.length,
-        imported: 0,
-        skippedDuplicates: 0,
-        excluded: res.records.filter((r) => !r.include && r.status !== 'erro' && r.status !== 'duplicada').length,
-        pending: res.stats.errors,
-        newAssets: assets.map((a) => a.ticker),
-        byCategory: res.stats.byCategory,
-        volume: res.stats.volume,
-        status: 'em_andamento',
-      };
-  st.beginImport(batch);
-  const CHUNK = 500;
+  const conc: Conciliation[] = res.records
+    .filter((r) => r.status === 'conciliacao' && (r as any).match)
+    .map((r) => {
+      const m = (r as any).match as { txId: string; diff: number; extractValue: number };
+      const t = st.transactions.find((x) => x.id === m.txId)!;
+      return { id: uid(), at: new Date().toISOString(), txId: m.txId, extractValue: m.extractValue, diff: m.diff, status: Math.abs(m.diff) <= 0.01 ? 'conferido' : 'pendente', cause: Math.abs(m.diff) <= 0.01 ? undefined : probableCause(m.diff, t), source: fileName } as Conciliation;
+    });
+  const batch: ImportBatch = {
+    id: importId,
+    at: new Date().toISOString(),
+    fileName,
+    fileHash,
+    totalRows: res.stats.total,
+    toImport: txs.length,
+    imported: 0,
+    skippedDuplicates: 0,
+    excluded: res.records.filter((r) => !r.include && r.status !== 'erro' && r.status !== 'duplicada' && r.status !== 'conciliacao').length,
+    pending: res.stats.errors,
+    newAssets: assets.map((a) => a.ticker),
+    byCategory: res.stats.byCategory,
+    volume: res.stats.volume,
+    status: 'em_andamento',
+  };
+  const snapshot = { transactions: st.transactions, assets: st.assets, conciliations: st.conciliations, imports: st.imports };
   try {
-    for (let i = 0; i < txs.length; i += CHUNK) {
-      useStore.getState().commitImportChunk(importId, txs.slice(i, i + CHUNK), i === 0 ? assets : [], i === 0 ? res.stats.duplicates : 0);
-      onProgress({ done: Math.min(txs.length, i + CHUNK), total: txs.length });
-      await new Promise((r) => setTimeout(r, 0));
-    }
-    if (!txs.length) useStore.getState().commitImportChunk(importId, [], assets, res.stats.duplicates);
+    st.beginImport(batch);
+    useStore.getState().commitImportChunk(importId, txs, assets, res.stats.duplicates, conc);
+    onProgress({ done: txs.length, total: txs.length });
     useStore.getState().finishImport(importId, { status: 'concluida', finishedAt: new Date().toISOString() });
   } catch (e) {
-    useStore.getState().finishImport(importId, { status: 'interrompida' });
+    // falha: desfaz tudo (nenhuma operação parcial fica gravada) e registra a tentativa
+    useStore.setState({ ...snapshot, imports: [{ ...batch, status: 'interrompida' }, ...snapshot.imports] });
     throw e;
   }
   return useStore.getState().imports.find((b) => b.id === importId)!;

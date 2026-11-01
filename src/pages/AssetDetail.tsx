@@ -11,6 +11,9 @@ import { Ladder } from '../components/Ladder';
 import { AssetForm } from '../components/AssetForm';
 import { brl, dateBR, dateTimeBR, num, pct, qtyFmt, signedPct } from '../domain/format';
 import { BAND_INFO } from '../domain/calc/bazin';
+import { PRIORITY_INFO } from '../domain/calc/scoring';
+import { Analysis360Tab } from './Analysis360';
+import { DPA_REF_LABEL, type DpaRef } from '../domain/types';
 import { annualHistory, avgDy, consecutiveYears, dividendCagr, paymentFrequency, suspectExtraordinary, ttmPerUnit } from '../domain/calc/dividends';
 import { fairValueSummary, valuations } from '../domain/calc/valuation';
 import { daysBetween, isNum, todayISO, uid } from '../domain/util';
@@ -32,7 +35,7 @@ export default function AssetDetail() {
     { key: 'resumo', label: 'Resumo & ranking' },
     { key: 'teto', label: bz ? 'Preço-teto & régua' : 'Métricas da classe' },
     ...(bz ? [{ key: 'dividendos' as Tab, label: 'Dividendos' }] : []),
-    ...(a.class !== 'cripto' ? [{ key: 'fundamentos' as Tab, label: a.class === 'acao' ? 'Fundamentos' : a.class === 'fii' ? 'Ficha do FII' : a.class === 'etf' ? 'Ficha do ETF' : 'Ficha do título' }] : []),
+    ...(a.class !== 'cripto' ? [{ key: 'fundamentos' as Tab, label: a.class === 'acao' || a.class === 'fii' ? 'Análise 360°' : a.class === 'etf' ? 'Ficha do ETF' : 'Ficha do título' }] : []),
     ...(bz ? [{ key: 'valuation' as Tab, label: 'Valuation' }] : []),
     { key: 'eventos', label: 'Eventos & fontes' },
     { key: 'cadastro', label: 'Cadastro' },
@@ -44,7 +47,7 @@ export default function AssetDetail() {
       {tab === 'resumo' && <Summary a={a} />}
       {tab === 'teto' && (bz ? <CeilingTab a={a} /> : <ClassMetrics a={a} />)}
       {tab === 'dividendos' && <DividendsTab a={a} />}
-      {tab === 'fundamentos' && (a.class === 'etf' ? <EtfTab a={a} /> : a.class === 'tesouro' ? <ClassMetrics a={a} /> : <FundamentalsTab a={a} />)}
+      {tab === 'fundamentos' && (a.class === 'etf' ? <EtfTab a={a} /> : a.class === 'tesouro' ? <ClassMetrics a={a} /> : <Analysis360Tab a={a}><FundamentalsTab a={a} /></Analysis360Tab>)}
       {tab === 'valuation' && <ValuationTab a={a} />}
       {tab === 'eventos' && <EventsTab a={a} />}
       {tab === 'cadastro' && <RegistryTab a={a} />}
@@ -200,7 +203,8 @@ function Summary({ a }: { a: Asset }) {
 function CeilingTab({ a }: { a: Asset }) {
   const d = useDerived();
   const update = useStore((s) => s.updateAsset);
-  const r = d.scoreById[a.id].bazin;
+  const sc = d.scoreById[a.id];
+  const r = sc.bazin;
   const ttm = ttmPerUnit(a, d.asOf);
   const defaultDy = a.class === 'fii' ? d.settings.defaultDy.fii : d.settings.defaultDy.acao;
   return (
@@ -225,6 +229,12 @@ function CeilingTab({ a }: { a: Asset }) {
                 <input type="checkbox" checked={a.useEstimate} onChange={(e) => update(a.id, { useEstimate: e.target.checked })} /> usar estimativa
               </label>
             </Field>
+            <Field label="DPA de referência" hint={r.dpaNote || undefined}>
+              <select value={a.dpaRef || ''} onChange={(e) => update(a.id, { dpaRef: (e.target.value || null) as DpaRef | null })}>
+                <option value="">Padrão da classe ({DPA_REF_LABEL[r.dpaRef].toLowerCase()})</option>
+                {(Object.keys(DPA_REF_LABEL) as DpaRef[]).map((k) => <option key={k} value={k}>{DPA_REF_LABEL[k]}</option>)}
+              </select>
+            </Field>
             <Field label="Prioridade de compra (1–5)">
               <NumInput value={a.priority} onChange={(v) => update(a.id, { priority: Math.max(1, Math.min(5, Math.round(v ?? 3))) })} />
             </Field>
@@ -235,22 +245,18 @@ function CeilingTab({ a }: { a: Asset }) {
         </Card>
         <Card title="Resultado">
           <div className="grid g3">
-            <Stat label="Preço-teto" value={brl(r.ceiling)} sub={`DY-alvo ${r.dyTarget}%`} tone="info" />
-            <Stat label="Cotação" value={brl(r.price)} sub={r.ratio !== null ? `${pct(r.ratio, 1)} do teto` : ''} />
-            <Stat label="DY atual (recorrente)" value={pct(r.dyCurrent, 2)} sub={r.dyTotal !== null && r.dyTotal !== r.dyCurrent ? `com extraord.: ${pct(r.dyTotal, 2)}` : ''} />
-            <Stat label={r.discount !== null && r.discount < 0 ? 'Prêmio sobre o teto' : 'Desconto vs teto'} value={r.discount === null ? '—' : pct(Math.abs(r.discount), 1)} tone={r.discount === null ? undefined : r.discount >= 0 ? 'pos' : 'neg'} />
-            <Stat label="Margem de segurança" value={pct(r.safetyMargin, 1)} tone={(r.safetyMargin ?? 0) >= 25 ? 'pos' : (r.safetyMargin ?? 0) > 0 ? 'warn' : 'neg'} />
-            <Stat label="Preço ideal de entrada" value={brl(r.idealEntry)} sub={`≤ ${d.settings.bands.maintenance}% do teto (início da faixa de oportunidade)`} />
+            <Stat label="Preço-teto" value={brl(r.ceiling)} sub={`DPA líquido ${brl(r.base.value)} ÷ DY ${r.dyTarget}%`} tone="info" />
+            <Stat label={`Teto Bazin (${d.settings.bazinDy}%)`} value={brl(r.bazinCeiling)} sub="DY original do método" />
+            <Stat label="Preço de oportunidade" value={brl(r.opportunityPrice)} sub={`Teto × (1 − ${d.settings.bands.margin}%)`} />
+            <Stat label="Cotação" value={brl(r.price)} seal={{ source: a.quote.source || 'sem fonte', at: a.quote.date }} />
+            <Stat label="Margem de segurança" value={r.margin === null ? '—' : `${r.margin >= 0 ? '▲ +' : '▼ '}${pct(r.margin, 1)}`} sub="(Teto − Preço) ÷ Teto" tone={r.margin === null ? undefined : r.margin >= d.settings.bands.margin ? 'pos' : r.margin >= 0 ? 'warn' : 'neg'} />
+            <Stat label="DY 12m líquido" value={pct(r.dyCurrent, 2)} sub={r.dyTotal !== null && r.dyTotal !== r.dyCurrent ? `com extraord.: ${pct(r.dyTotal, 2)}` : ''} />
           </div>
         </Card>
       </div>
-      <Card title="Régua inteligente de compra" sub="O marcador avança pelos degraus conforme a cotação se aproxima das zonas mais atrativas. Limites editáveis em Parâmetros.">
+      <Card title="Régua de compra" sub={`Margem exigida ${d.settings.bands.margin}% (editável em Parâmetros). Classificação final: ${PRIORITY_INFO[sc.priority].label}.`}>
         <Ladder r={r} bands={d.settings.bands} />
-        {r.band && (r.band === 'oportunidade' || r.band === 'extrema') && d.scoreById[a.id].alerts.some((x) => x.level !== 'info') && (
-          <div className="note warn" style={{ marginTop: 10 }}>
-            Queda de preço com alertas de fundamentos ativos: isto <b>não</b> é tratado como oportunidade automática. Revise a tese.
-          </div>
-        )}
+        <ul className="reasons" style={{ marginTop: 10 }}>{sc.reasons.map((x, i) => <li key={i}>{x}</li>)}</ul>
       </Card>
       <div className="grid g2">
         <Card title="Distância até cada faixa">
@@ -270,13 +276,13 @@ function CeilingTab({ a }: { a: Asset }) {
         </Card>
         <Card title="Cenários de DY-alvo">
           <table className="tbl">
-            <thead><tr><th>DY-alvo</th><th className="num">Preço-teto</th><th className="num">Preço/teto</th><th>Faixa</th></tr></thead>
+            <thead><tr><th>DY-alvo</th><th className="num">Preço-teto</th><th className="num">Margem</th><th>Faixa</th></tr></thead>
             <tbody>
               {r.scenarios.map((s) => (
                 <tr key={s.dy} style={s.dy === r.dyTarget ? { background: 'rgba(47,140,255,.08)' } : undefined}>
                   <td className="mono">{s.dy}%</td>
                   <td className="num">{brl(s.ceiling)}</td>
-                  <td className="num">{pct(s.ratio, 0)}</td>
+                  <td className="num">{s.margin === null ? '—' : `${s.margin >= 0 ? '+' : ''}${pct(s.margin, 1)}`}</td>
                   <td><BandBadge b={s.band} /></td>
                 </tr>
               ))}
@@ -325,10 +331,10 @@ function DividendsTab({ a }: { a: Asset }) {
         {rows.length ? (
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={rows}>
-              <CartesianGrid stroke="#1c2b46" vertical={false} />
-              <XAxis dataKey="year" stroke="#56698a" fontSize={11} />
-              <YAxis yAxisId="v" stroke="#56698a" fontSize={11} tickFormatter={(v) => 'R$' + num(v, 2)} width={60} />
-              <YAxis yAxisId="dy" orientation="right" stroke="#56698a" fontSize={11} tickFormatter={(v) => v + '%'} width={40} />
+              <CartesianGrid stroke="var(--line)" vertical={false} />
+              <XAxis dataKey="year" stroke="var(--dim)" fontSize={11} />
+              <YAxis yAxisId="v" stroke="var(--dim)" fontSize={11} tickFormatter={(v) => 'R$' + num(v, 2)} width={60} />
+              <YAxis yAxisId="dy" orientation="right" stroke="var(--dim)" fontSize={11} tickFormatter={(v) => v + '%'} width={40} />
               <Tooltip content={<ChartTip fmt={(v: number) => num(v, 4)} />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar yAxisId="v" dataKey="recurring" stackId="a" name="Recorrente" fill="#2fd38a" />
@@ -470,7 +476,7 @@ function FundamentalsTab({ a }: { a: Asset }) {
   return (
     <div className="stack">
       <Card
-        title={a.class === 'acao' ? 'Ficha fundamentalista (padrão CNPI)' : `Ficha do FII — ${a.fiiType ? FII_TYPE_LABEL[a.fiiType] : 'tipo não definido'}`}
+        title={a.class === 'acao' ? 'Indicadores manuais de reserva (usados quando a CVM não tem o dado)' : `Ficha do FII — ${a.fiiType ? FII_TYPE_LABEL[a.fiiType] : 'tipo não definido'} (dados de relatório gerencial)`}
         sub={<>Preenchimento manual a partir de fontes primárias (RI, CVM, relatório gerencial). Última revisão: {a.fundamentals.updatedAt ? dateBR(a.fundamentals.updatedAt) : 'nunca'} {a.fundamentals.updatedAt ? <DataTag kind="manual" date={a.fundamentals.updatedAt} source={a.fundamentals.source} /> : <DataTag kind="ausente" />}</>}
       >
         <div className="form-grid">

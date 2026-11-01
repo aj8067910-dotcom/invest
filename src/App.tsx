@@ -9,7 +9,7 @@ import { dateBR, num } from './domain/format';
 import { todayISO } from './domain/util';
 import { syncMacro, syncQuotes } from './services/sync';
 import { startAutoSync, useCloud } from './services/cloudsync';
-import { applyMarketData } from './services/marketdata';
+import { applyMarketData, runAutoProventos } from './services/marketdata';
 import Dashboard from './pages/Dashboard';
 import Assets from './pages/Assets';
 import AssetDetail from './pages/AssetDetail';
@@ -68,9 +68,44 @@ export default function App() {
   // ao abrir: primeiro traz os dados da nuvem, depois aplica as cotações e proventos do robô diário
   useEffect(() => {
     if (!hydrated) return;
-    startAutoSync().then(() => applyMarketData());
+    startAutoSync()
+      .then(() => applyMarketData())
+      .then(() => runAutoProventos());
   }, [hydrated]);
+  // lançamento automático de proventos em cascata: qualquer mudança no livro recalcula (idempotente)
+  const txCount = useStore((s) => s.transactions.length);
+  useEffect(() => {
+    if (!hydrated) return;
+    const t = setTimeout(() => runAutoProventos(), 800);
+    return () => clearTimeout(t);
+  }, [hydrated, txCount]);
   const cloud = useCloud();
+
+  // tema: segue o sistema ou a escolha em Parâmetros
+  const theme = useStore((s) => s.settings.theme);
+  useEffect(() => {
+    const el = document.documentElement;
+    if (theme === 'claro') el.dataset.theme = 'light';
+    else if (theme === 'escuro') el.dataset.theme = 'dark';
+    else delete el.dataset.theme;
+  }, [theme]);
+
+  // alertas da análise 360° que mudam de cor geram aviso (carteira e watchlist)
+  const updateAsset = useStore((s) => s.updateAsset);
+  useEffect(() => {
+    if (!hydrated || !d.market.generatedAt) return;
+    for (const r of d.ranking) {
+      const a = d.assets.find((x) => x.id === r.assetId);
+      if (!a || (a.class !== 'acao' && a.class !== 'fii')) continue;
+      const levels: Record<string, 'verde' | 'amarelo' | 'vermelho'> = {};
+      for (const b of r.analysis.blocks) if (b.status === 'verde' || b.status === 'amarelo' || b.status === 'vermelho') levels[b.title] = b.status;
+      const prev = a.alertState?.levels;
+      if (prev && JSON.stringify(prev) === JSON.stringify(levels)) continue;
+      const at = new Date().toISOString();
+      const changes = prev ? Object.keys({ ...prev, ...levels }).filter((k) => prev[k] && levels[k] && prev[k] !== levels[k]).map((k) => ({ at, key: k, from: prev[k], to: levels[k] })) : [];
+      updateAsset(a.id, { alertState: { at, levels }, alertChanges: [...(a.alertChanges || []), ...changes].slice(-50) });
+    }
+  }, [hydrated, d.ranking, d.market.generatedAt, d.assets, updateAsset]);
 
   // registra a evolução patrimonial diária (base do gráfico de evolução desde dez/2025)
   useEffect(() => {

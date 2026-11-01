@@ -31,7 +31,7 @@ export function PriorityBadge({ p }: { p: Priority }) {
 export function BandBadge({ b }: { b: BandKey | null }) {
   if (!b) return <Badge tone="muted">sem faixa</Badge>;
   const tone = BAND_INFO[b].tone;
-  return <Badge tone={tone === 'great' ? 'great' : tone === 'good' ? 'good' : tone === 'info' ? 'info' : 'muted'}>{BAND_INFO[b].label}</Badge>;
+  return <Badge tone={tone === 'good' ? 'good' : tone === 'info' ? 'info' : 'muted'}>{BAND_INFO[b].label}</Badge>;
 }
 
 export function ClassBadge({ c }: { c: AssetClass }) {

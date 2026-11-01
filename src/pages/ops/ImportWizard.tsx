@@ -10,6 +10,7 @@ import { brl, dateBR, dateTimeBR, qtyFmt } from '../../domain/format';
 import { toast } from '../../components/toast';
 
 const STEPS = ['Selecionar arquivo', 'Reconhecer os dados', 'Validar informações', 'Conferência', 'Processamento'];
+// Importação transacional: tudo ou nada.
 const KIND_LABEL = (k: SheetKind) => (k === 'b3' ? 'Extrato da B3 (Área do Investidor)' : k === 'ignorar' ? 'Ignorar esta aba' : OP_CATEGORY_LABEL[k]);
 const CLASS_OPTS: [AssetClass, string][] = [['acao', 'Ação'], ['fii', 'FII'], ['etf', 'ETF'], ['cripto', 'Cripto'], ['tesouro', 'Renda fixa']];
 
@@ -22,12 +23,11 @@ export function ImportWizard() {
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
   const [includes, setIncludes] = useState<Record<string, boolean>>({});
   const [classOverride, setClassOverride] = useState<Record<string, AssetClass>>({});
-  const [filter, setFilter] = useState<'erro' | 'aviso' | 'duplicada' | 'todos'>('erro');
+  const [filter, setFilter] = useState<'erro' | 'aviso' | 'duplicada' | 'conciliacao' | 'todos'>('erro');
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [report, setReport] = useState<ImportBatch | null>(null);
-  const [resumeId, setResumeId] = useState<string | undefined>();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const previous = file ? imports.filter((b) => b.fileHash === file.hash && b.status !== 'revertida') : [];
@@ -57,7 +57,6 @@ export function ImportWizard() {
       setClassOverride({});
       setReport(null);
       setProgress(null);
-      setResumeId(undefined);
       setStep(1);
     } catch (e: any) {
       toast('Não foi possível ler o arquivo: ' + (e?.message || e), true);
@@ -79,11 +78,11 @@ export function ImportWizard() {
     setBusy(true);
     setStep(4);
     try {
-      const b = await runImport(result, file.name, file.hash, setProgress, resumeId);
+      const b = await runImport(result, file.name, file.hash, setProgress);
       setReport(b);
       toast(`Importação concluída: ${b.imported} operações gravadas.`);
     } catch (e: any) {
-      toast('A importação foi interrompida: ' + (e?.message || e) + '. Envie o mesmo arquivo para retomar.', true);
+      toast('A importação falhou e nada foi gravado (tudo ou nada): ' + (e?.message || e), true);
       setReport(useStore.getState().imports.find((x) => x.fileHash === file.hash) || null);
     } finally {
       setBusy(false);
@@ -136,7 +135,7 @@ export function ImportWizard() {
               {interrupted ? (
                 <>
                   Este arquivo tem uma importação <b>interrompida</b> em {dateTimeBR(interrupted.at)} ({interrupted.imported} de {interrupted.toImport} gravadas).{' '}
-                  <label className="chk"><input type="checkbox" checked={resumeId === interrupted.id} onChange={(e) => setResumeId(e.target.checked ? interrupted.id : undefined)} /> retomar essa importação (o que já foi gravado é reconhecido e não se repete)</label>
+                  Como a importação é tudo ou nada, nada daquela tentativa foi gravado: importe de novo.
                 </>
               ) : (
                 <>Este mesmo arquivo já foi importado em {dateTimeBR(previous[0].at)}. As operações já gravadas serão reconhecidas como duplicadas e não serão importadas de novo.</>
@@ -203,7 +202,7 @@ export function ImportWizard() {
             <Stat label="Válidos" value={String(result.stats.valid)} tone="pos" />
             <Stat label="Com avisos" value={String(result.stats.withIssues)} tone="warn" sub="importáveis" />
             <Stat label="Pendências" value={String(result.stats.errors)} tone={result.stats.errors ? 'neg' : undefined} sub="não serão importados sem correção" />
-            <Stat label="Duplicidades" value={String(result.stats.duplicates)} sub="ignoradas por padrão" />
+            <Stat label="Duplicidades" value={String(result.stats.duplicates)} sub={`ignoradas · ${result.stats.conciliations} provento(s) para conciliar`} />
             <Stat label="Serão importados" value={String(result.stats.toImport)} tone="info" sub={brl(result.stats.volume)} />
           </div>
         </>
@@ -227,9 +226,9 @@ export function ImportWizard() {
             </div>
           )}
           <div className="row" style={{ marginBottom: 10 }}>
-            {(['erro', 'aviso', 'duplicada', 'todos'] as const).map((f) => (
+            {(['erro', 'aviso', 'duplicada', 'conciliacao', 'todos'] as const).map((f) => (
               <button key={f} className={`btn sm ${filter === f ? 'primary' : ''}`} onClick={() => setFilter(f)}>
-                {{ erro: 'Pendências', aviso: 'Avisos', duplicada: 'Duplicidades', todos: 'Todos' }[f]}{' '}
+                {{ erro: 'Pendências', aviso: 'Avisos', duplicada: 'Duplicidades', conciliacao: 'Conciliação', todos: 'Todos' }[f]}{' '}
                 <span className="mono">{f === 'todos' ? result.records.length : result.records.filter((r) => r.status === f).length}</span>
               </button>
             ))}
@@ -288,7 +287,8 @@ export function ImportWizard() {
               <div className="note">Ativos novos: <b>{result.newAssets.map((n) => n.ticker).join(', ') || 'nenhum'}</b></div>
               {result.stats.errors > 0 && <div className="note warn">{result.stats.errors} registro(s) com pendência <b>não</b> serão importados. Volte à etapa 3 para corrigir ou baixe a lista de pendências.</div>}
               {result.stats.duplicates > 0 && <div className="note">{result.stats.duplicates} duplicidade(s) ignorada(s) (já existem na plataforma).</div>}
-              <div className="note">A importação fica registrada como um lote: você pode revertê-la inteira depois, em “Importações”.</div>
+              {result.stats.conciliations > 0 && <div className="note">{result.stats.conciliations} provento(s) do extrato correspondem a lançamentos automáticos: serão conciliados (conferido ou pendência), sem duplicar.</div>}
+              <div className="note">Gravação tudo ou nada. O lote fica registrado e pode ser revertido por estorno em “Importações”.</div>
             </div>
           </div>
           <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
@@ -337,6 +337,7 @@ export function ImportWizard() {
 function StatusBadge({ r }: { r: ImportRecord }) {
   if (r.status === 'erro') return <Badge tone="bad">pendência</Badge>;
   if (r.status === 'duplicada') return <Badge tone="muted">duplicada</Badge>;
+  if (r.status === 'conciliacao') return <Badge tone="info">conciliação</Badge>;
   if (r.status === 'aviso') return <Badge tone="warn">aviso</Badge>;
   return <Badge tone="good">ok</Badge>;
 }

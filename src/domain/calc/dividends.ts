@@ -1,5 +1,7 @@
 import type { Asset, Transaction, Distribution } from '../types';
 import { INCOME_TX } from '../types';
+import { activeTransactions, isReceived } from '../ledger';
+import { D, Decimal, N, ZERO } from '../money';
 import { addMonths, isNum, median, monthKey, todayISO } from '../util';
 import { isHeld, type Position } from './positions';
 
@@ -182,8 +184,8 @@ export function monthlyReceived(txs: Transaction[], startISO: string, asOf = tod
     cur = addMonths(cur, 1);
   }
   const idx = new Map(rows.map((r, i) => [r.month, i]));
-  for (const t of txs) {
-    if (!INCOME_TX.includes(t.type)) continue;
+  for (const t of activeTransactions(txs)) {
+    if (!INCOME_TX.includes(t.type) || !isReceived(t, asOf)) continue;
     const i = idx.get(monthKey(t.date));
     if (i === undefined) continue;
     rows[i].received += t.amount;
@@ -198,57 +200,57 @@ export interface IncomeSummary {
   prev12m: number;
   avgMonthly12m: number;
   monthsOfHistory: number;
-  growthPct: number | null; // últimos 12m vs 12m anteriores
+  growthPct: number | null; // últimos 12m ÷ 12m anteriores − 1
   growthLabel: string;
   totalReceived: number;
+  provisioned: number;
   byAsset: { assetId: string; ticker: string; value: number; share: number }[];
   top1Share: number;
   top3Share: number;
 }
 
+/**
+ * Renda passiva recebida (pela DATA DE PAGAMENTO, valores líquidos).
+ * - Média mensal = soma dos últimos 12 meses ÷ 12 (janela móvel, mesmo com histórico menor).
+ * - Crescimento = últimos 12 meses ÷ 12 meses anteriores − 1; só com 24 meses de histórico.
+ */
 export function incomeSummary(assets: Asset[], txs: Transaction[], startISO: string, asOf = todayISO()): IncomeSummary {
-  const rows = monthlyReceived(txs, startISO, asOf);
+  const active = activeTransactions(txs);
+  const rows = monthlyReceived(active, startISO, asOf);
   const lastFull = rows.length >= 2 ? rows[rows.length - 2] : rows[rows.length - 1];
-  const curMonth = rows[rows.length - 1];
-  const last12 = rows.slice(-12);
-  const prev12 = rows.slice(-24, -12);
-  const last12m = last12.reduce((s, r) => s + r.received, 0);
-  const prev12m = prev12.reduce((s, r) => s + r.received, 0);
-  const monthsWithData = rows.length;
-  const divisor = Math.min(12, Math.max(1, monthsWithData));
+  const y1 = addMonths(asOf, -12);
+  const y2 = addMonths(asOf, -24);
+  const inc = active.filter((t) => INCOME_TX.includes(t.type));
+  const received = inc.filter((t) => isReceived(t, asOf));
+  const sumD = (xs: Transaction[]) => xs.reduce((acc, t) => acc.plus(D(t.amount)), ZERO);
+  const last12m = N(sumD(received.filter((t) => t.date > y1)));
+  const prev12m = N(sumD(received.filter((t) => t.date > y2 && t.date <= y1)));
+  const provisioned = N(sumD(inc.filter((t) => !isReceived(t, asOf))));
   let growthPct: number | null = null;
-  let growthLabel = '';
-  if (prev12.length === 12 && prev12m > 0) {
-    growthPct = ((last12m - prev12m) / prev12m) * 100;
-    growthLabel = '12m vs 12m anteriores';
-  } else if (rows.length >= 4) {
-    // histórico curto (início em dez/2025): compara trimestre atual vs primeiro trimestre
-    const first3 = rows.slice(0, 3).reduce((s, r) => s + r.received, 0);
-    const lastQ = rows.slice(-3).reduce((s, r) => s + r.received, 0);
-    if (first3 > 0) {
-      growthPct = ((lastQ - first3) / first3) * 100;
-      growthLabel = 'últimos 3 meses vs 3 primeiros meses';
-    } else growthLabel = 'histórico insuficiente';
-  } else growthLabel = 'histórico insuficiente';
+  let growthLabel = '12 meses ÷ 12 meses anteriores − 1';
+  if (startISO > y2) growthLabel = 'histórico insuficiente (precisa de 24 meses)';
+  else if (prev12m > 0) growthPct = (last12m / prev12m - 1) * 100;
+  else growthLabel = 'sem proventos nos 12 meses anteriores';
 
-  const totals = new Map<string, number>();
-  for (const t of txs) if (INCOME_TX.includes(t.type) && t.assetId) totals.set(t.assetId, (totals.get(t.assetId) || 0) + t.amount);
-  const total = [...totals.values()].reduce((s, v) => s + v, 0);
+  const totals = new Map<string, Decimal>();
+  for (const t of received) if (t.assetId) totals.set(t.assetId, (totals.get(t.assetId) || ZERO).plus(D(t.amount)));
+  const total = [...totals.values()].reduce((x, v) => x.plus(v), ZERO);
   const byAsset = [...totals.entries()]
-    .map(([assetId, value]) => ({ assetId, ticker: assets.find((a) => a.id === assetId)?.ticker || '?', value, share: total ? (value / total) * 100 : 0 }))
+    .map(([assetId, v]) => ({ assetId, ticker: assets.find((a) => a.id === assetId)?.ticker || '?', value: N(v), share: total.isZero() ? 0 : N(v.dividedBy(total).times(100)) }))
     .sort((a, b) => b.value - a.value);
   return {
     lastMonth: lastFull?.received ?? 0,
     last12m,
     prev12m,
-    avgMonthly12m: last12m / divisor,
-    monthsOfHistory: monthsWithData,
+    avgMonthly12m: N(D(last12m).dividedBy(12)),
+    monthsOfHistory: rows.length,
     growthPct,
-    growthLabel: curMonth ? growthLabel : '',
-    totalReceived: total,
+    growthLabel,
+    totalReceived: N(total),
+    provisioned,
     byAsset,
     top1Share: byAsset[0]?.share ?? 0,
-    top3Share: byAsset.slice(0, 3).reduce((s, a) => s + a.share, 0),
+    top3Share: byAsset.slice(0, 3).reduce((x, a) => x + a.share, 0),
   };
 }
 

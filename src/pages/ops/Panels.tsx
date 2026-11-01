@@ -2,11 +2,14 @@ import { Fragment, useMemo, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useStore } from '../../store/store';
 import { useDerived } from '../../store/derived';
-import { Badge, Card, DataTag, Empty, Modal, Stat } from '../../components/ui';
+import { Badge, Card, DataTag, Empty, Modal, Stat, Why } from '../../components/ui';
 import { ChartTip } from '../../components/common';
 import { TX_LABEL, INCOME_TX, type AuditEntry, type Transaction } from '../../domain/types';
 import { brl, brlShort, dateBR, dateTimeBR, monthBR, pct, qtyFmt } from '../../domain/format';
 import { investedSeries, monthlyCashflows, yearlyCashflows } from '../../domain/calc/history';
+import { monthlyGains } from '../../domain/calc/gains';
+import { BASKET_LABEL, type Basket } from '../../domain/calc/positions';
+import { TAX_REFS } from '../../domain/tax';
 import { txToValues } from '../../domain/opsheet';
 import { EntryForm } from './EntryForm';
 import { toast } from '../../components/toast';
@@ -37,6 +40,9 @@ export function AssetLedger({ assetId, onSelect }: { assetId: string | null; onS
         <Stat label="Resultado realizado" value={brl(p.realized)} tone={p.realized >= 0 ? 'pos' : 'neg'} />
         <Stat label="Resultado não realizado" value={p.unrealized === null ? '—' : brl(p.unrealized)} tone={(p.unrealized ?? 0) >= 0 ? 'pos' : 'neg'} sub={p.hasQuote ? `cotação ${brl(p.price)}` : 'sem cotação'} />
       </div>
+      {Object.keys(p.realizedByBasket).length > 0 && (
+        <div className="note">Resultado realizado por cesta: {Object.entries(p.realizedByBasket).map(([b, v]) => `${BASKET_LABEL[b as Basket]} ${brl(v)}`).join(' · ')}</div>
+      )}
       {(p.reviews.length > 0 || p.divergences.length > 0) && (
         <div className="note warn">
           {p.reviews.map((r, i) => <div key={'r' + i}>{dateBR(r.date)}: {r.message}</div>)}
@@ -65,6 +71,7 @@ export function AssetLedger({ assetId, onSelect }: { assetId: string | null; onS
           </tbody>
         </table>
       </div>
+      <GainsCard />
       {incomeByYear.size > 0 && (
         <Card title="Proventos recebidos por ano" sub={<>Valores creditados e rendimento sobre o custo atual <DataTag kind="real" /></>}>
           <table className="tbl">
@@ -81,26 +88,68 @@ export function AssetLedger({ assetId, onSelect }: { assetId: string | null; onS
   );
 }
 
+// ───────────── ganho de capital por cesta ─────────────
+function GainsCard() {
+  const d = useDerived();
+  const rows = useMemo(() => monthlyGains(d.positions, d.settings.tax), [d.positions, d.settings.tax]);
+  if (!rows.length) return null;
+  const tot = new Map<Basket, number>();
+  for (const r of rows) tot.set(r.basket, (tot.get(r.basket) || 0) + r.result);
+  return (
+    <Card title="Resultado realizado por cesta de compensação (todos os ativos)" sub={<>Prejuízo só compensa dentro da mesma cesta. Estimativa: confirme com um contador. <Why text={TAX_REFS.gains} /></>}>
+      <div className="row" style={{ marginBottom: 8 }}>
+        {[...tot.entries()].map(([b, v]) => <Badge key={b} tone={v >= 0 ? 'good' : 'bad'}>{BASKET_LABEL[b]}: {v >= 0 ? '+' : ''}{brl(v)}</Badge>)}
+      </div>
+      <div className="tbl-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+        <table className="tbl">
+          <thead><tr><th>Mês</th><th>Cesta</th><th className="num">Vendas</th><th className="num">Resultado</th><th>Isento</th><th className="num">Prejuízo usado</th><th className="num">Base</th><th className="num">IR estimado</th><th className="num">Prejuízo a compensar</th></tr></thead>
+          <tbody>
+            {[...rows].reverse().map((r) => (
+              <tr key={r.month + r.basket}>
+                <td>{monthBR(r.month)}</td>
+                <td>{BASKET_LABEL[r.basket]}</td>
+                <td className="num">{brl(r.sales)}</td>
+                <td className={`num ${r.result >= 0 ? 'pos' : 'neg'}`}>{r.result >= 0 ? '+' : ''}{brl(r.result)}</td>
+                <td>{r.exempt ? 'sim' : '—'}</td>
+                <td className="num">{r.lossUsed ? brl(r.lossUsed) : '—'}</td>
+                <td className="num">{brl(r.taxable)}</td>
+                <td className="num">{r.ir ? brl(r.ir) : '—'}</td>
+                <td className="num">{r.lossCarry ? brl(r.lossCarry) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 // ───────────── aportes ─────────────
 export function ContributionsPanel() {
   const d = useDerived();
   const months = useMemo(() => monthlyCashflows(d.transactions), [d.transactions]);
   const years = useMemo(() => yearlyCashflows(months), [months]);
   const inv = useMemo(() => investedSeries(d.positions), [d.positions]);
+  const ipca = d.market.series?.ipca;
   const chart = useMemo(() => {
     let acc = 0;
+    let real = 0; // capital aportado corrigido pelo IPCA até o mês corrente
     const byM = new Map(inv.map((x) => [x.month, x.invested]));
+    const ip = new Map(ipca || []);
     return months.map((m) => {
       acc += m.aportes - m.retiradas;
-      return { month: m.month, aportes: m.aportes, reinvestido: m.reinvestido, capital: acc, investido: byM.get(m.month) ?? null };
+      real = real * (1 + (ip.get(m.month) ?? 0) / 100) + (m.aportes - m.retiradas);
+      return { month: m.month, aportes: m.aportes, reinvestido: m.reinvestido, capital: acc, capitalIpca: ipca ? real : null, investido: byM.get(m.month) ?? null };
     });
-  }, [months, inv]);
+  }, [months, inv, ipca]);
+  const noAporte = months.filter((m) => m.aportes <= 0).length;
+  const avgAporte = months.length ? months.reduce((s, m) => s + m.aportes, 0) / months.length : 0;
   if (!months.length) return <Empty>Nenhuma movimentação registrada.</Empty>;
   const t = d.totals;
   return (
     <div className="stack">
       <div className="grid g4">
-        <Stat label="Capital novo aportado" value={brl(t.deposits)} tone="info" sub="somente aportes externos" />
+        <Stat label="Capital novo aportado" value={brl(t.deposits)} tone="info" sub={`média mensal ${brl(avgAporte)} sobre ${months.length} meses · ${noAporte} sem aporte`} />
         <Stat label="Retiradas" value={brl(t.withdrawals)} />
         <Stat label="Proventos reinvestidos" value={brl(t.reinvestedIncome)} tone="pos" sub="não contam como aporte" />
         <Stat label="Custo investido hoje" value={brl(t.costBasis)} sub={!t.deposits ? '' : t.cash >= 0 ? `caixa estimado ${brl(t.cash)}` : 'aportes registrados não cobrem todas as compras'} />
@@ -108,15 +157,16 @@ export function ContributionsPanel() {
       <Card title="Aportes por mês e capital investido" sub="Barras: aportes externos e reinvestimentos · linhas: capital aportado acumulado e custo das posições (reconstruído pelo histórico)">
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={chart}>
-            <CartesianGrid stroke="#1c2b46" vertical={false} />
-            <XAxis dataKey="month" tickFormatter={monthBR} stroke="#56698a" fontSize={11} minTickGap={20} />
-            <YAxis yAxisId="m" stroke="#56698a" fontSize={11} tickFormatter={brlShort} width={70} />
-            <YAxis yAxisId="a" orientation="right" stroke="#56698a" fontSize={11} tickFormatter={brlShort} width={80} />
+            <CartesianGrid stroke="var(--line)" vertical={false} />
+            <XAxis dataKey="month" tickFormatter={monthBR} stroke="var(--dim)" fontSize={11} minTickGap={20} />
+            <YAxis yAxisId="m" stroke="var(--dim)" fontSize={11} tickFormatter={brlShort} width={70} />
+            <YAxis yAxisId="a" orientation="right" stroke="var(--dim)" fontSize={11} tickFormatter={brlShort} width={80} />
             <Tooltip content={<ChartTip labelFmt={monthBR} />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar yAxisId="m" dataKey="aportes" name="Aportes" fill="#2f8cff" stackId="m" />
             <Bar yAxisId="m" dataKey="reinvestido" name="Reinvestido" fill="#2fd38a" stackId="m" radius={[3, 3, 0, 0]} />
             <Line yAxisId="a" dataKey="capital" name="Capital aportado (acum.)" stroke="#f5b83d" dot={false} strokeWidth={2} />
+            {ipca && <Line yAxisId="a" dataKey="capitalIpca" name="Capital aportado corrigido pelo IPCA" stroke="#c49bff" dot={false} strokeDasharray="4 3" />}
             <Line yAxisId="a" dataKey="investido" name="Custo das posições" stroke="#38c6f4" dot={false} strokeWidth={2} />
           </ComposedChart>
         </ResponsiveContainer>
@@ -152,6 +202,18 @@ export function ReviewPanel({ onOpenAsset }: { onOpenAsset: (id: string) => void
     ];
   });
   const noAsset = d.transactions.filter((t) => t.review && !t.assetId);
+  // eventos corporativos divulgados pela B3 sem lançamento correspondente no livro
+  const evMap: Record<string, string> = { BONIFICACAO: 'bonificacao', DESDOBRAMENTO: 'desdobramento', GRUPAMENTO: 'grupamento' };
+  for (const a of d.assets) {
+    const p = d.positions[a.id];
+    if (!p.firstBuy) continue;
+    for (const ev of d.market.stockEvents?.[a.ticker] || []) {
+      const type = evMap[(ev.label || '').toUpperCase()];
+      if (!type || !ev.dataCom || ev.dataCom < p.firstBuy) continue;
+      const has = d.transactions.some((t) => t.assetId === a.id && t.type === type && Math.abs(new Date(t.date).getTime() - new Date(ev.dataCom!).getTime()) <= 10 * 86400000);
+      if (!has) items.push({ a, date: ev.dataCom, kind: 'Evento B3', msg: `${ev.label.toLowerCase()} (fator ${ev.factor.toLocaleString('pt-BR')}${type === 'bonificacao' ? '%' : ''}) com data-com ${ev.dataCom.split('-').reverse().join('/')} não está no livro. Lance o evento na Central (com o custo atribuído, se bonificação). Fonte: B3.` });
+    }
+  }
   if (!items.length && !noAsset.length) return <Empty>Nenhuma operação pendente de revisão. Todas puderam ser calculadas com segurança.</Empty>;
   return (
     <Card title={`${items.length + noAsset.length} item(ns) para revisão manual`} sub="Operações que o sistema não conseguiu calcular com segurança ou que divergem da quantidade informada. Corrija pela edição ou lance o que falta (ex.: saldo inicial).">
@@ -160,7 +222,7 @@ export function ReviewPanel({ onOpenAsset }: { onOpenAsset: (id: string) => void
           <thead><tr><th>Ativo</th><th>Data</th><th>Tipo</th><th>Motivo</th><th></th></tr></thead>
           <tbody>
             {items.sort((x, y) => x.date.localeCompare(y.date)).map((it, i) => (
-              <tr key={i}><td className="mono">{it.a.ticker}</td><td className="nowrap">{dateBR(it.date)}</td><td><Badge tone={it.kind === 'Revisão' ? 'warn' : 'info'}>{it.kind}</Badge></td><td style={{ fontSize: 12.5 }}>{it.msg}</td><td><button className="btn ghost sm" onClick={() => onOpenAsset(it.a.id)}>abrir histórico</button></td></tr>
+              <tr key={i}><td className="mono">{it.a.ticker}</td><td className="nowrap">{dateBR(it.date)}</td><td><Badge tone={it.kind === 'Revisão' ? 'warn' : it.kind === 'Evento B3' ? 'bad' : 'info'}>{it.kind}</Badge></td><td style={{ fontSize: 12.5 }}>{it.msg}</td><td><button className="btn ghost sm" onClick={() => onOpenAsset(it.a.id)}>abrir histórico</button></td></tr>
             ))}
             {noAsset.map((t) => <tr key={t.id}><td>—</td><td>{dateBR(t.date)}</td><td><Badge tone="warn">Revisão</Badge></td><td>{t.review}</td><td></td></tr>)}
           </tbody>
@@ -219,7 +281,7 @@ export function ImportsPanel() {
 }
 
 // ───────────── auditoria ─────────────
-const ACTION_TONE: Record<AuditEntry['action'], string> = { criar: 'good', editar: 'info', excluir: 'bad', importar: 'info', reverter: 'warn', restaurar: 'warn' };
+const ACTION_TONE: Record<AuditEntry['action'], string> = { criar: 'good', editar: 'info', excluir: 'bad', estornar: 'bad', corrigir: 'info', importar: 'info', reverter: 'warn', restaurar: 'warn', provento_auto: 'good', conciliar: 'info', migrar: 'muted' };
 
 export function AuditPanel() {
   const { audit, addTransaction } = useStore();
@@ -228,7 +290,7 @@ export function AuditPanel() {
   const list = audit.filter((e) => !q || e.summary.toLowerCase().includes(q.toLowerCase()) || e.action.includes(q.toLowerCase())).slice(0, 500);
   if (!audit.length) return <Empty>Nenhuma alteração registrada ainda.</Empty>;
   return (
-    <Card title="Histórico de alterações" sub={`${audit.length} registro(s). Edições guardam o valor anterior; exclusões guardam a operação inteira e podem ser restauradas.`}>
+    <Card title="Histórico de alterações" sub={`${audit.length} registro(s). Livro só de inclusão: correções e estornos guardam quem, quando, motivo e o valor anterior; um estorno pode ser relançado.`}>
       <input placeholder="Filtrar (ex.: ITUB4, excluir, importar)…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 10 }} aria-label="Filtrar auditoria" />
       <div className="tbl-wrap" style={{ maxHeight: 560, overflowY: 'auto' }}>
         <table className="tbl">
@@ -242,8 +304,8 @@ export function AuditPanel() {
                   <td style={{ fontSize: 12.5 }}>{e.summary}</td>
                   <td className="nowrap">
                     {(e.before || e.after) && <button className="btn ghost sm" onClick={() => setOpen(open === e.id ? null : e.id)}>{open === e.id ? 'fechar' : 'detalhes'}</button>}
-                    {e.action === 'excluir' && e.before && (
-                      <button className="btn ghost sm" onClick={() => { const { id: _i, fingerprint: _f, ...t } = e.before as Transaction; const r = addTransaction(t as Transaction); toast(r.ok ? 'Operação restaurada.' : 'Já existe uma operação igual; nada foi restaurado.', !r.ok); }}>restaurar</button>
+                    {(e.action === 'excluir' || e.action === 'estornar') && e.before && (
+                      <button className="btn ghost sm" onClick={() => { const { id: _i, fingerprint: _f, ...t } = e.before as Transaction; const r = addTransaction({ ...(t as Transaction), notes: `${t.notes || ''} (relançado a partir do estorno)`.trim() }, { allowDuplicate: true }); toast(r.ok ? 'Operação relançada como novo lançamento.' : 'Não foi possível relançar.', !r.ok); }}>relançar</button>
                     )}
                   </td>
                 </tr>

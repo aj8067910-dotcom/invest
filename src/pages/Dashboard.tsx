@@ -30,16 +30,18 @@ export default function Dashboard() {
     [d, amount, s.allocator],
   );
   const months = monthlyReceived(d.transactions, d.historyStart, d.asOf);
-  const bazinRanked = d.ranking.filter((r) => r.bazin.applicable && r.bazin.ratio !== null);
-  const cheap = bazinRanked.filter((r) => r.bazin.band === 'oportunidade' || r.bazin.band === 'extrema').sort((a, b) => a.bazin.ratio! - b.bazin.ratio!);
-  const expensive = bazinRanked.filter((r) => r.bazin.ratio! > 100).sort((a, b) => b.bazin.ratio! - a.bazin.ratio!);
-  const top = d.ranking.filter((r) => r.priority === 'maxima' || r.priority === 'alta').slice(0, 5);
+  const bazinRanked = d.ranking.filter((r) => r.bazin.applicable && r.bazin.margin !== null);
+  const cheap = bazinRanked.filter((r) => r.bazin.band === 'oportunidade').sort((a, b) => b.bazin.margin! - a.bazin.margin!);
+  const expensive = bazinRanked.filter((r) => r.bazin.margin! < 0).sort((a, b) => a.bazin.margin! - b.bazin.margin!);
+  const top = d.ranking.filter((r) => r.priority === 'oportunidade').slice(0, 5);
+  const robotAt = d.market.generatedAt;
+  const ledgerAt = d.allTransactions.reduce((m, t) => ((t.updatedAt || '') > m ? t.updatedAt || '' : m), '') || null;
+  const R = d.returns;
   const sectors = exposure(d.assets.filter((a) => a.class === 'acao' || a.class === 'fii'), d.positions, 'setor');
   const held = d.assets.filter((a) => isHeld(d.positions[a.id]));
   const firstGoal = s.goals.find((g) => g > d.forward.monthly) ?? s.goals[s.goals.length - 1];
   const progress = firstGoal ? Math.min(100, (d.forward.monthly / firstGoal) * 100) : 0;
   const thesisAlerts = d.ranking.flatMap((r) => r.alerts.filter((x) => x.level !== 'info').map((x) => ({ ...x, message: `${byId.get(r.assetId)?.ticker}: ${x.message}` })));
-  const totalRet = d.totals.unrealized + d.totals.realized + d.totals.income;
   const monthsSince = Math.max(1, d.income.monthsOfHistory);
 
   return (
@@ -71,13 +73,28 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <div className="grid g6">
-        <Stat label="Patrimônio" value={brlShort(d.totals.marketValue)} sub={d.totals.missingQuotes.length ? `${d.totals.missingQuotes.length} ativo(s) a preço de custo` : 'a valor de mercado'} tone="info" tag={<DataTag kind={d.totals.missingQuotes.length ? 'estimativa' : 'real'} />} />
-        <Stat label="Investido (custo)" value={brlShort(d.totals.costBasis)} sub={`${held.length} ativos em carteira`} />
-        <Stat label="Renda mensal (média 12m)" value={brl(d.income.avgMonthly12m)} sub={`último mês fechado: ${brl(d.income.lastMonth)}`} tone="pos" tag={<DataTag kind="real" />} />
-        <Stat label="Renda mensal estimada" value={brl(d.forward.monthly)} sub={`${brl(d.forward.annual)}/ano com a carteira atual`} tone="warn" tag={<DataTag kind="estimativa" />} />
-        <Stat label="Crescimento da renda" value={d.income.growthPct === null ? '—' : signedPct(d.income.growthPct)} sub={d.income.growthLabel || 'histórico insuficiente'} tone={d.income.growthPct && d.income.growthPct > 0 ? 'pos' : undefined} />
-        <Stat label="Retorno total" value={brl(totalRet)} sub={`proventos ${brl(d.totals.income)} · valorização ${brl(d.totals.unrealized)}`} tone={totalRet >= 0 ? 'pos' : 'neg'} />
+      {d.upcoming.length > 0 && (
+        <div className="note warn">
+          <b>Data-com nos próximos 7 dias:</b>{' '}
+          {d.upcoming.map((u) => `${u.ticker} (${u.type === 'jcp' ? 'JCP' : u.type === 'rendimento' ? 'rendimento' : u.type}, R$ ${u.perUnit.toLocaleString('pt-BR', { maximumFractionDigits: 6 })}/un., data-com ${dateBR(u.dataCom)})`).join(' · ')}.
+          Quem tiver o ativo no fechamento do pregão da data-com recebe.
+        </div>
+      )}
+      <div className="grid g4">
+        <Stat label="Patrimônio" value={brlShort(d.totals.marketValue)} sub={d.totals.missingQuotes.length ? `${d.totals.missingQuotes.length} ativo(s) a preço de custo` : 'a valor de mercado (sem reserva de emergência)'} tone="info" seal={{ source: 'Livro + cotações B3', at: robotAt }} />
+        <Stat label="Capital aportado" value={brlShort(d.totals.netContributed)} sub={`aportes externos − retiradas · reinvestido ${brlShort(d.totals.reinvestedIncome)} não conta`} seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
+        <Stat label="Resultado acumulado" value={brl(d.totals.accumulatedResult)} sub="patrimônio + retiradas − aportes externos" tone={d.totals.accumulatedResult >= 0 ? 'pos' : 'neg'} seal={{ source: 'Livro + cotações B3', at: robotAt }} />
+        <Stat
+          label="Rentabilidade"
+          value={R.twr === null ? '—' : `${R.twr >= 0 ? '+' : ''}${pct(R.twr * 100, 2)}`}
+          sub={<>TWR (cotização) desde {dateBR(R.from)}{R.xirr !== null ? <> · TIR {R.xirr >= 0 ? '+' : ''}{pct(R.xirr * 100, 2)} a.a.</> : ''}{R.cdi !== null ? <> · CDI no período +{pct(R.cdi * 100, 2)}</> : ''}{R.approximated.length ? ` · ${R.approximated.length} ativo(s) a custo` : ''}</>}
+          tone={R.twr !== null && R.twr < 0 ? 'neg' : 'pos'}
+          seal={{ source: 'Livro + fechamentos mensais (B3/Yahoo) + CDI (BCB)', at: robotAt }}
+        />
+        <Stat label="DY da carteira (12m)" value={pct(d.dyPortfolio, 2)} sub={<>proventos líquidos recebidos ÷ patrimônio · Yield on Cost {pct(d.yieldOnCost, 2)}</>} tone="pos" seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
+        <Stat label="Média mensal de proventos" value={brl(d.income.avgMonthly12m)} sub={`últimos 12 meses ÷ 12 · provisionado ${brl(d.income.provisioned)}`} tone="pos" seal={{ source: 'Livro (data de pagamento)', at: ledgerAt }} />
+        <Stat label="Crescimento da renda" value={d.income.growthPct === null ? '—' : signedPct(d.income.growthPct)} sub={d.income.growthLabel} tone={d.income.growthPct !== null && d.income.growthPct > 0 ? 'pos' : d.income.growthPct !== null ? 'neg' : undefined} seal={{ source: 'Livro (data de pagamento)', at: ledgerAt }} />
+        <Stat label="Renda estimada (12m à frente)" value={brl(d.forward.monthly)} sub={`por mês · qtd atual × DPA de referência líquido`} tone="warn" tag={<DataTag kind="estimativa" />} seal={{ source: 'Proventos B3/CVM + livro', at: robotAt }} />
       </div>
 
       <div className="hero">
@@ -118,14 +135,14 @@ export default function Dashboard() {
         <Card title="Respostas rápidas">
           <div className="answer">
             <div style={{ flex: 1 }}>
-              <div className="q">Quais ativos estão baratos?</div>
-              <div className="a">{cheap.length ? cheap.slice(0, 6).map((r) => `${byId.get(r.assetId)?.ticker} (${pct(r.bazin.ratio, 0)} do teto)`).join(' · ') : 'Nenhum em faixa de oportunidade.'}</div>
+              <div className="q">Quais ativos estão baratos (margem ≥ {pct(s.bands.margin, 0)})?</div>
+              <div className="a">{cheap.length ? cheap.slice(0, 6).map((r) => `${byId.get(r.assetId)?.ticker} (margem +${pct(r.bazin.margin, 0)})`).join(' · ') : 'Nenhum com a margem exigida.'}</div>
             </div>
           </div>
           <div className="answer">
             <div style={{ flex: 1 }}>
               <div className="q">Quais estão caros (acima do preço-teto)?</div>
-              <div className="a">{expensive.length ? expensive.slice(0, 6).map((r) => `${byId.get(r.assetId)?.ticker} (${pct(r.bazin.ratio, 0)})`).join(' · ') : 'Nenhum acima do teto (ou faltam dados).'}</div>
+              <div className="a">{expensive.length ? expensive.slice(0, 6).map((r) => `${byId.get(r.assetId)?.ticker} (${pct(r.bazin.margin, 0)})`).join(' · ') : 'Nenhum acima do teto (ou faltam dados).'}</div>
             </div>
           </div>
           <div className="answer">
@@ -207,9 +224,9 @@ export default function Dashboard() {
                     <stop offset="1" stopColor="#2f8cff" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#1c2b46" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={dateBR} stroke="#56698a" fontSize={11} />
-                <YAxis stroke="#56698a" fontSize={11} tickFormatter={(v) => brlShort(v)} width={80} />
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={dateBR} stroke="var(--dim)" fontSize={11} />
+                <YAxis stroke="var(--dim)" fontSize={11} tickFormatter={(v) => brlShort(v)} width={80} />
                 <Tooltip content={<ChartTip labelFmt={dateBR} />} />
                 <Area type="monotone" dataKey="value" name="Patrimônio" stroke="#2f8cff" fill="url(#gv)" strokeWidth={2} connectNulls />
                 <Area type="monotone" dataKey="invested" name="Investido" stroke="#7f93b3" fill="none" strokeDasharray="4 4" />
@@ -223,9 +240,9 @@ export default function Dashboard() {
           {months.some((m) => m.received > 0) ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={months}>
-                <CartesianGrid stroke="#1c2b46" vertical={false} />
-                <XAxis dataKey="month" tickFormatter={monthBR} stroke="#56698a" fontSize={11} />
-                <YAxis stroke="#56698a" fontSize={11} tickFormatter={(v) => brlShort(v)} width={70} />
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis dataKey="month" tickFormatter={monthBR} stroke="var(--dim)" fontSize={11} />
+                <YAxis stroke="var(--dim)" fontSize={11} tickFormatter={(v) => brlShort(v)} width={70} />
                 <Tooltip content={<ChartTip labelFmt={monthBR} />} cursor={{ fill: 'rgba(47,140,255,.06)' }} />
                 <Bar dataKey="received" name="Recebido" fill="#2fd38a" radius={[4, 4, 0, 0]} />
               </BarChart>

@@ -2,17 +2,21 @@
 // Não precisa de token. Preserva o que o usuário editou: cotações manuais mais recentes,
 // marcações de extraordinário, proventos lançados à mão e preços anuais digitados.
 import { useStore } from '../store/store';
+import { useMarket } from '../store/market';
+import type { MarketData } from '../domain/market';
 import type { Asset, Distribution } from '../domain/types';
 import { suspectExtraordinary } from '../domain/calc/dividends';
+import { planAutoProventos } from '../domain/calc/proventos';
 import { uid } from '../domain/util';
 
-export const ROBOT_SOURCE = 'Yahoo Finance (B3)';
-const AUTO_SOURCES = new Set([ROBOT_SOURCE, 'brapi.dev']);
+export const ROBOT_SOURCE = 'B3';
+/** Proventos vindos de coleta automática (podem ser substituídos pela próxima coleta). */
+const isAuto = (src: string) => /^(B3|Yahoo|brapi)/.test(src);
 
-export interface MarketFile {
+export interface MarketFile extends Omit<MarketData, 'generatedAt'> {
   generatedAt: string;
-  quotes: Record<string, { price: number; time: string }>;
-  dividends: Record<string, { exDate: string; value: number }[]>;
+  quotes: Record<string, { price: number; time: string; source?: string }>;
+  dividends: Record<string, { exDate: string; value: number; type?: Distribution['type']; payDate?: string | null; source?: string }[]>;
   annualPrices: Record<string, Record<string, number>>;
   tesouro: Record<string, { dataBase: string; taxaCompra: number; taxaVenda: number; puCompra: number; puVenda: number; puBase: number }>;
   macro: Record<string, { value: number; date: string }>;
@@ -39,9 +43,9 @@ export async function fetchMarketFile(): Promise<MarketFile> {
 }
 
 /** Monta a nova lista de proventos de um ativo a partir do robô, mantendo as escolhas do usuário. */
-export function mergeRobotDistributions(a: Asset, robot: { exDate: string; value: number }[]): Distribution[] {
-  const manual = a.distributions.filter((d) => !AUTO_SOURCES.has(d.source));
-  const prevAuto = a.distributions.filter((d) => AUTO_SOURCES.has(d.source));
+export function mergeRobotDistributions(a: Asset, robot: { exDate: string; value: number; type?: Distribution['type']; payDate?: string | null; source?: string }[]): Distribution[] {
+  const manual = a.distributions.filter((d) => !isAuto(d.source));
+  const prevAuto = a.distributions.filter((d) => isAuto(d.source));
   const fresh: Distribution[] = [];
   const isNew = new Set<string>();
   for (const r of robot) {
@@ -50,11 +54,12 @@ export function mergeRobotDistributions(a: Asset, robot: { exDate: string; value
     const d: Distribution = {
       id: prev?.id ?? uid(),
       exDate: r.exDate,
-      payDate: prev?.payDate ?? null,
+      payDate: r.payDate ?? prev?.payDate ?? null,
       value: r.value,
-      type: prev?.type ?? (a.class === 'fii' ? 'rendimento' : 'dividendo'),
+      // tipo informado pela B3 prevalece; sem tipo na fonte, mantém o que o usuário marcou
+      type: r.source === 'B3' && r.type ? r.type : prev?.type ?? r.type ?? (a.class === 'fii' ? 'rendimento' : 'dividendo'),
       recurring: prev?.recurring ?? true,
-      source: ROBOT_SOURCE,
+      source: r.source || ROBOT_SOURCE,
     };
     if (!prev) isNew.add(d.id);
     fresh.push(d);
@@ -65,7 +70,7 @@ export function mergeRobotDistributions(a: Asset, robot: { exDate: string; value
   return all.map((d) => (isNew.has(d.id) && sus.has(d.id) ? { ...d, recurring: false } : d));
 }
 
-const sig = (ds: Distribution[]) => JSON.stringify(ds.map((d) => [d.exDate, d.value, d.type, d.recurring, d.source]));
+const sig = (ds: Distribution[]) => JSON.stringify(ds.map((d) => [d.exDate, d.value, d.type, d.recurring, d.source, d.payDate]));
 
 export async function applyMarketData(): Promise<MarketReport> {
   const rep: MarketReport = { generatedAt: null, quotes: 0, dividendsChanged: 0, tesouro: 0, macro: 0, covered: new Set() };
@@ -77,6 +82,21 @@ export async function applyMarketData(): Promise<MarketReport> {
     return rep;
   }
   rep.generatedAt = m.generatedAt;
+  // dados de mercado: armazenamento próprio, separado do livro
+  useMarket.getState().setMarket({
+    generatedAt: m.generatedAt,
+    calendar: m.calendar || {},
+    companies: m.companies || {},
+    fiis: m.fiis || {},
+    risk: m.risk || {},
+    monthEnd: m.monthEnd || {},
+    series: m.series || {},
+    ntnb: m.ntnb || null,
+    segments: m.segments || {},
+    stockEvents: m.stockEvents || {},
+    sources: m.sources || {},
+    errors: m.errors || [],
+  });
   const st = useStore.getState();
   for (const a of st.assets) {
     const t = a.ticker.toUpperCase();
@@ -86,7 +106,7 @@ export async function applyMarketData(): Promise<MarketReport> {
       rep.covered.add(a.id);
       if (!a.quote.date || q.time > a.quote.date || (a.quote.price !== q.price && q.time >= a.quote.date)) {
         if (a.quote.price !== q.price || a.quote.date !== q.time) {
-          useStore.getState().setQuote(a.id, q.price, q.time, a.class === 'cripto' ? 'CoinGecko (BRL) via robô' : `${ROBOT_SOURCE} via robô`);
+          useStore.getState().setQuote(a.id, q.price, q.time, `${q.source || (a.class === 'cripto' ? 'CoinGecko' : 'B3')} · robô`);
           rep.quotes++;
         }
       }
@@ -132,4 +152,14 @@ export async function applyMarketData(): Promise<MarketReport> {
     }
   }
   return rep;
+}
+
+/** Roda o lançamento automático de proventos pela data-com e grava o plano (idempotente). */
+export function runAutoProventos(): { created: number; reversed: number; upcoming: number; divergences: number } {
+  const st = useStore.getState();
+  const cal = useMarket.getState().calendar;
+  if (!cal || !Object.keys(cal).length) return { created: 0, reversed: 0, upcoming: 0, divergences: 0 };
+  const plan = planAutoProventos(st.assets, st.transactions, cal, st.settings);
+  st.applyAutoPlan(plan);
+  return { created: plan.create.length, reversed: plan.reverse.length, upcoming: plan.upcoming.length, divergences: plan.divergences.length };
 }

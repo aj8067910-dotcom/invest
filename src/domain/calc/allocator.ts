@@ -1,6 +1,7 @@
 import type { Asset, AssetClass } from '../types';
 import { CLASS_LABEL, isBazinClass } from '../types';
 import { isNum } from '../util';
+import { D, Decimal, N } from '../money';
 import { BAND_INFO } from './bazin';
 import type { ScoreContext, ScoreResult } from './scoring';
 import { PRIORITY_INFO } from './scoring';
@@ -44,7 +45,8 @@ export interface AllocatorOutput {
 }
 
 const unitStep = (a: Asset) => (a.class === 'cripto' ? 1e-8 : a.class === 'tesouro' ? 0.01 : 1);
-const floorStep = (v: number, step: number) => Math.floor(v / step + 1e-9) * step;
+/** Quantidade SEMPRE arredondada para cima: o valor simulado fica igual ou acima do informado (Etapa 8). */
+const ceilStep = (value: number, price: number, step: number) => N(D(value).dividedBy(price).dividedBy(step).toDecimalPlaces(0, Decimal.ROUND_CEIL).times(step));
 
 export function planContribution(input: AllocatorInput, ranking: ScoreResult[], ctx: ScoreContext): AllocatorOutput {
   const investable = Math.max(0, input.amount - input.reserve);
@@ -64,7 +66,7 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
     if (!a) continue;
     if (input.eligibleIds && !input.eligibleIds.includes(a.id)) continue;
     const price = isNum(a.quote.price) && a.quote.price > 0 ? a.quote.price : null;
-    if (r.priority !== 'maxima' && r.priority !== 'alta') {
+    if (r.priority === 'aguardar' || (r.priority === 'manutencao' && !input.includeMaintenance)) {
       excluded.push({ asset: a, reason: `${PRIORITY_INFO[r.priority].label}${r.reasons.length ? ' — ' + r.reasons[r.reasons.length - 1] : ''}` });
       continue;
     }
@@ -74,14 +76,14 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
     }
     if (isBazinClass(a.class)) {
       const b = r.bazin.band;
-      if (b === 'aguardar' || (b === 'manutencao' && !input.includeMaintenance)) {
+      if (b === 'aguardar' || b === null || (b === 'manutencao' && !input.includeMaintenance)) {
         excluded.push({ asset: a, reason: `Faixa "${b ? BAND_INFO[b].label : '—'}" não elegível.` });
         continue;
       }
     }
     const why: string[] = [`Pontuação ${r.score}/100 · ${PRIORITY_INFO[r.priority].label}.`];
-    let adj = r.score + (r.priority === 'maxima' ? 5 : 0);
-    if (isBazinClass(a.class) && r.bazin.ratio !== null) why.push(`Cotação R$ ${price.toFixed(2)} = ${r.bazin.ratio.toFixed(0)}% do teto R$ ${r.bazin.ceiling!.toFixed(2)} (${BAND_INFO[r.bazin.band!].label}).`);
+    let adj = r.score + (r.priority === 'oportunidade' ? 5 : 0);
+    if (isBazinClass(a.class) && r.bazin.margin !== null) why.push(`Cotação R$ ${price.toFixed(2)} com margem de ${r.bazin.margin.toFixed(1)}% sobre o teto R$ ${r.bazin.ceiling!.toFixed(2)} (${BAND_INFO[r.bazin.band!].label}).`);
     const cls = ctx.alloc.rows.find((x) => x.cls === a.class)!;
     if (cls.diff < -2) {
       adj += Math.min(10, -cls.diff);
@@ -139,41 +141,20 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
   let remaining = investable;
   const totalAdj = chosen.reduce((s, c) => s + Math.max(1, c.adj), 0);
 
-  // 1ª passada: proporcional à pontuação ajustada
+  // proporcional à pontuação ajustada; quantidade arredondada para cima
   for (const c of chosen) {
-    const share = mode === 'concentrar' ? investable : (investable * Math.max(1, c.adj)) / totalAdj;
-    const budget = Math.min(share, c.room, remaining);
-    const step = unitStep(c.a);
-    const qty = floorStep(budget / c.price, step);
-    if (qty <= 0) {
-      excluded.push({ asset: c.a, reason: `Preço unitário (R$ ${c.price.toFixed(2)}) acima do valor alocado.` });
-      continue;
-    }
-    const cost = qty * c.price;
+    const share = mode === 'concentrar' ? Math.min(investable, c.room) : Math.min((investable * Math.max(1, c.adj)) / totalAdj, c.room);
+    if (share <= 0) continue;
+    const qty = ceilStep(share, c.price, unitStep(c.a));
+    const cost = N(D(qty).times(c.price));
     remaining -= cost;
-    lines.push({ asset: c.a, result: c.r, adjScore: c.adj, qty, price: c.price, cost, why: c.why });
-  }
-  // 2ª passada: usa sobras comprando unidades adicionais dos melhores, respeitando limites
-  const pool = mode === 'concentrar' ? cands : chosen;
-  for (const c of pool) {
-    let line = lines.find((l) => l.asset.id === c.a.id);
-    const used = line?.cost ?? 0;
-    const room = Math.min(c.room - used, remaining);
-    const qty = floorStep(room / c.price, unitStep(c.a));
-    if (qty <= 0) continue;
-    if (!line) {
-      if (mode === 'concentrar' && lines.length >= Math.max(1, input.maxAssets)) continue;
-      line = { asset: c.a, result: c.r, adjScore: c.adj, qty: 0, price: c.price, cost: 0, why: [...c.why, 'Recebe a sobra do aporte.'] };
-      lines.push(line);
-    }
-    line.qty += qty;
-    line.cost += qty * c.price;
-    remaining -= qty * c.price;
+    lines.push({ asset: c.a, result: c.r, adjScore: c.adj, qty, price: c.price, cost, why: [...c.why, `Quantidade arredondada para cima: ${qty} × R$ ${c.price.toFixed(2)} = R$ ${cost.toFixed(2)}.`] });
   }
 
   const invested = lines.reduce((s, l) => s + l.cost, 0);
   const leftover = input.amount - invested;
   const verdict = invested <= 0 ? 'aguardar' : remaining > investable * 0.25 ? 'parcial' : 'investir';
+  if (remaining < 0) summary.push(`O arredondamento para cima excede o valor investível em R$ ${(-remaining).toFixed(2)}.`);
   if (verdict === 'parcial') summary.push(`R$ ${remaining.toFixed(2)} não alocados: sem candidatos adicionais dentro dos limites. Não há obrigação de investir todo o valor.`);
   if (input.reserve > 0) summary.push(`Reserva mantida: R$ ${input.reserve.toFixed(2)}.`);
   return { verdict, investable, invested, leftover, lines, excluded, summary };

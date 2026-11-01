@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useDerived } from '../store/derived';
-import { Card, DataTag, Disclaimer, Empty, Stat, Tabs } from '../components/ui';
+import { Badge, Card, DataTag, Disclaimer, Empty, Stat, Tabs, Why } from '../components/ui';
+import { provStatus } from '../domain/calc/proventos';
+import { TAX_REFS } from '../domain/tax';
 import { AssetLink, ChartTip, PALETTE } from '../components/common';
-import { brl, brlShort, monthBR, num, pct, qtyFmt, signedPct } from '../domain/format';
+import { brl, brlShort, dateBR, monthBR, num, pct, qtyFmt, signedPct } from '../domain/format';
 import { annualHistory, avgDy, dividendCagr, monthlyReceived, paymentFrequency, portfolioAnnualProForma, ttmPerUnit } from '../domain/calc/dividends';
 import { isBazinClass, TX_LABEL } from '../domain/types';
 
@@ -13,6 +15,7 @@ export default function Dividends() {
   const months = monthlyReceived(d.transactions, d.historyStart, d.asOf).map((m) => ({ month: m.month, ...m.byType, total: m.received }));
   const proForma = portfolioAnnualProForma(d.assets, d.positions);
   const inc = d.income;
+  const provs = d.transactions.filter((t) => ['dividendo', 'jcp', 'rendimento', 'amortizacao', 'outro_provento', 'juros'].includes(t.type) && t.assetId).sort((a, b) => (b.exDate || b.date).localeCompare(a.exDate || a.date));
   const share = view === 'recebido' ? inc.byAsset.map((x) => ({ name: x.ticker, value: x.value, share: x.share })) : d.forward.rows.map((x) => ({ name: x.ticker, value: x.annual, share: x.share }));
   const top1 = share[0]?.share ?? 0;
   const top3 = share.slice(0, 3).reduce((s, x) => s + x.share, 0);
@@ -49,9 +52,9 @@ export default function Dividends() {
       <div className="grid g6">
         <Stat label="Renda do último mês" value={brl(inc.lastMonth)} tag={<DataTag kind="real" />} tone="pos" />
         <Stat label="Renda 12 meses" value={brl(inc.last12m)} tag={<DataTag kind="real" />} sub={`${inc.monthsOfHistory} meses de histórico`} />
-        <Stat label="Média mensal 12m" value={brl(inc.avgMonthly12m)} tag={<DataTag kind="real" />} />
+        <Stat label="Média mensal 12m" value={brl(inc.avgMonthly12m)} tag={<DataTag kind="real" />} sub="soma dos 12 meses ÷ 12" />
         <Stat label="Crescimento" value={inc.growthPct === null ? '—' : signedPct(inc.growthPct)} sub={inc.growthLabel} tone={inc.growthPct && inc.growthPct > 0 ? 'pos' : undefined} />
-        <Stat label="Renda estimada mensal" value={brl(d.forward.monthly)} tag={<DataTag kind="estimativa" />} tone="warn" />
+        <Stat label="Provisionado" value={brl(inc.provisioned)} sub="data-com passada, pagamento futuro" tone="warn" />
         <Stat label="Renda estimada anual" value={brl(d.forward.annual)} tag={<DataTag kind="estimativa" />} sub={`total já recebido ${brl(inc.totalReceived)}`} />
       </div>
 
@@ -60,9 +63,9 @@ export default function Dividends() {
           {months.some((m) => m.total > 0) ? (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={months}>
-                <CartesianGrid stroke="#1c2b46" vertical={false} />
-                <XAxis dataKey="month" tickFormatter={monthBR} stroke="#56698a" fontSize={11} />
-                <YAxis stroke="#56698a" fontSize={11} tickFormatter={brlShort} width={70} />
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis dataKey="month" tickFormatter={monthBR} stroke="var(--dim)" fontSize={11} />
+                <YAxis stroke="var(--dim)" fontSize={11} tickFormatter={brlShort} width={70} />
                 <Tooltip content={<ChartTip labelFmt={monthBR} />} cursor={{ fill: 'rgba(47,140,255,.06)' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {types.map((t) => <Bar key={t} dataKey={t} stackId="a" name={TX_LABEL[t]} fill={typeColor[t]} />)}
@@ -76,9 +79,9 @@ export default function Dividends() {
           {proForma.length ? (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={proForma}>
-                <CartesianGrid stroke="#1c2b46" vertical={false} />
-                <XAxis dataKey="year" stroke="#56698a" fontSize={11} />
-                <YAxis stroke="#56698a" fontSize={11} tickFormatter={brlShort} width={70} />
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis dataKey="year" stroke="var(--dim)" fontSize={11} />
+                <YAxis stroke="var(--dim)" fontSize={11} tickFormatter={brlShort} width={70} />
                 <Tooltip content={<ChartTip />} cursor={{ fill: 'rgba(47,140,255,.06)' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="recorrente" stackId="a" name="Recorrente" fill="#2fd38a" />
@@ -116,6 +119,49 @@ export default function Dividends() {
           </div>
         ) : (
           <Empty>Sem dados de renda {view === 'estimado' ? 'estimada (requer posições e proventos por unidade)' : 'recebida'}.</Empty>
+        )}
+      </Card>
+
+      <Card title="Proventos lançados" sub={<>Lançamento automático pela data-com (posição no fechamento do pregão da data-com) e lançamentos manuais. Renda recebida conta pela data de pagamento; provisionado, pela data-com. <Why text={`${TAX_REFS.jcp} ${TAX_REFS.dividend} ${TAX_REFS.fii}`} /></>}>
+        {provs.length ? (
+          <div className="tbl-wrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
+            <table className="tbl">
+              <thead><tr><th>Ativo</th><th>Tipo</th><th>Data-com</th><th>Pagamento</th><th className="num">Qtd elegível</th><th className="num">R$/un.</th><th className="num">Bruto</th><th className="num">IR</th><th className="num">Líquido</th><th>Status</th><th>Origem</th></tr></thead>
+              <tbody>
+                {provs.slice(0, 200).map((t) => {
+                  const st = provStatus(t, d.asOf, d.conferred);
+                  const pend = d.conciliations.find((c) => c.txId === t.id && c.status === 'pendente');
+                  return (
+                    <tr key={t.id}>
+                      <td className="mono">{t.ticker}</td>
+                      <td>{TX_LABEL[t.type]}</td>
+                      <td>{dateBR(t.exDate)}</td>
+                      <td>{t.payDate || !t.auto ? dateBR(t.payDate || t.date) : <span className="dim">a definir</span>}</td>
+                      <td className="num">{t.qty ? qtyFmt(t.qty) : '—'}</td>
+                      <td className="num">{t.perUnit ? num(t.perUnit, 6) : '—'}</td>
+                      <td className="num">{brl(t.gross ?? t.amount)}</td>
+                      <td className="num">{t.ir ? brl(t.ir) : '—'}</td>
+                      <td className="num pos">{brl(t.amount)}</td>
+                      <td>
+                        <Badge tone={st === 'conferido' ? 'good' : st === 'recebido' ? 'info' : 'warn'}>{st}</Badge>
+                        {pend && <Badge tone="bad" title={pend.cause}>pendência {brl(pend.diff)}</Badge>}
+                      </td>
+                      <td style={{ fontSize: 12 }}>{t.auto ? <>automático{t.reliability === 'estimada' && <span className="warn-t" title="anterior a 01/11/2019 ou fonte sem tipo/pagamento"> · estimado</span>}</> : 'manual/importado'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty>Nenhum provento lançado. Os automáticos aparecem quando há posição na data-com de um provento do calendário da B3.</Empty>
+        )}
+        {(d.provDivergences.length > 0 || d.conciliations.some((c) => c.status === 'pendente')) && (
+          <div className="note warn" style={{ marginTop: 10 }}>
+            <b>Pendências de conciliação</b>
+            {d.provDivergences.map((x, i) => <div key={'m' + i}>{x.ticker} · {TX_LABEL[x.type]} · {dateBR(x.payDate)}: lançado à mão {brl(x.manual)} × calculado {brl(x.computed)} (o lançamento manual foi mantido; nada duplicado).</div>)}
+            {d.conciliations.filter((c) => c.status === 'pendente').map((c) => { const t = d.allTransactions.find((x) => x.id === c.txId); return <div key={c.id}>{t?.ticker} · {dateBR(t?.payDate || t?.date)}: extrato {brl(c.extractValue)} × calculado {brl(t?.amount)} (diferença {brl(c.diff)}). Causa provável: {c.cause}</div>; })}
+          </div>
         )}
       </Card>
 

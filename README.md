@@ -11,8 +11,10 @@ Responde rapidamente: quanto tenho investido, quanto recebo por mês, o que est�
 
 ## Dados de mercado automáticos (sem token)
 
-Um robô no GitHub Actions (`scripts/fetch-market.mjs`) roda 4× por dia útil e aos sábados e publica `market-data.json` junto com o site:
-- cotações de ações, FIIs e ETFs da B3 e 10 anos de proventos por unidade e preço médio anual (Yahoo Finance);
+Um robô no GitHub Actions (`scripts/fetch-market.ts`) roda 4× por dia útil e aos sábados e publica `market-data.json` junto com o site. Hierarquia de fontes: **B3 → CVM → RI → BCB → Tesouro**; agregadores (Yahoo) só como reserva.
+- B3: proventos com data-com e pagamento, eventos (bonificação, desdobro), fechamento e volume diário (COTAHIST);
+- CVM: demonstrações anuais (DFP, 6 anos) e Informe Mensal de FII;
+- Yahoo Finance (reserva): cotação, risco e proventos antigos, marcados como estimados;
 - PU e taxa dos títulos do Tesouro Direto (arquivo oficial do Tesouro Transparente);
 - Selic, IPCA 12m, CDI e dólar PTAX (Banco Central — SGS); BTC e USDC (CoinGecko).
 
@@ -86,8 +88,12 @@ Primeiro uso:
 
 ## Regras de decisão implementadas
 
-- **Preço-teto** = provento anual recorrente por unidade ÷ DY-alvo. Extraordinários nunca entram (pagamentos > 2,5× a mediana são sinalizados).
-- **Régua**: aguardar (> 85% do teto), manutenção (75–85%), oportunidade (65–75%), extrema (≤ 65%) — editáveis.
+Detalhes, fundamentos e decisões em [`MUDANCAS.md`](MUDANCAS.md); diagnóstico inicial em [`AUDITORIA.md`](AUDITORIA.md).
+
+- **Livro só de inclusão**: corrigir = estorno + novo lançamento; excluir = estorno; motivo obrigatório. Cálculos em decimal exato.
+- **Proventos automáticos pela data-com**: posição no fechamento da data-com, IR na fonte (JCP 17,5%; dividendos 10% acima de R$ 50 mil/mês por empresa; FII isento), provisionado → recebido → conferido.
+- **Preço-teto** = DPA de referência líquido ÷ DY-alvo (8%; Bazin 6% ao lado). Extraordinários nunca entram.
+- **Régua por margem** = (teto − preço) ÷ teto: aguardar (< 0%), manutenção (0–15%), oportunidade (≥ 15% e aprovado no filtro de qualidade da Análise 360°).
 - **Queda não é oportunidade automática**: com alertas de fundamentos (payout > 100%, dívida acima do limite, corte de proventos, queda de ROE/margem entre revisões, vacância/inadimplência, evento negativo), o ativo vai para *monitoramento* ou *revisar tese*.
 - **DY alto não é premiado sozinho**: DY > 2× o alvo com sustentabilidade fraca limita a classificação.
 - **Dados insuficientes** (< 50% do peso com informação) limitam a classificação a *monitoramento*.

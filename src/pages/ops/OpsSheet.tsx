@@ -22,6 +22,9 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [onlyReview, setOnlyReview] = useState(false);
+  const [showReversed, setShowReversed] = useState(false);
+  const [reason, setReason] = useState('');
+  const reversedIds = useMemo(() => new Set(transactions.filter((t) => t.type === 'estorno').map((t) => t.reversalOf)), [transactions]);
   const [desc, setDesc] = useState(true);
   const [page, setPage] = useState(0);
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -32,7 +35,7 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(OP_CATEGORIES.map((k) => [k, 0])) as Record<OpCategory, number>;
-    for (const t of transactions) c[catOf(t)]++;
+    for (const t of transactions) if (t.type !== 'estorno' && !reversedIds.has(t.id)) c[catOf(t)]++;
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, byId]);
@@ -40,6 +43,7 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
   const list = useMemo(() => {
     const term = q.trim().toUpperCase();
     const out = transactions
+      .filter((t) => showReversed || (t.type !== 'estorno' && !reversedIds.has(t.id)))
       .filter((t) => catOf(t) === cat)
       .filter((t) => !term || (t.ticker || '').toUpperCase().includes(term) || (t.assetId && byId.get(t.assetId)?.name.toUpperCase().includes(term)) || (t.notes || '').toUpperCase().includes(term) || (t.broker || '').toUpperCase().includes(term))
       .filter((t) => !type || t.type === type)
@@ -48,7 +52,7 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
       .sort(txOrder);
     return desc ? out.reverse() : out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, cat, q, type, from, to, onlyReview, desc, byId]);
+  }, [transactions, cat, q, type, from, to, onlyReview, desc, byId, showReversed, reversedIds]);
 
   const pageList = list.slice(page * PAGE, page * PAGE + PAGE);
   // linhas no formato exato da planilha (mesma função da exportação)
@@ -81,6 +85,7 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
         <label className="chk">de <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} style={{ width: 150 }} /></label>
         <label className="chk">até <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} style={{ width: 150 }} /></label>
         <label className="chk"><input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> só com revisão</label>
+        <label className="chk"><input type="checkbox" checked={showReversed} onChange={(e) => setShowReversed(e.target.checked)} /> mostrar estornos</label>
         <button className="btn sm ghost" onClick={() => setDesc((x) => !x)}>{desc ? 'Mais recentes primeiro' : 'Mais antigas primeiro'}</button>
         <span style={{ marginLeft: 'auto' }} className="row">
           <button className="btn sm" onClick={() => exportOperationsCsv(transactions, assets, cat)}>CSV desta aba</button>
@@ -112,8 +117,15 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
                     <td className="nowrap">
                       {t.review && <Badge tone="warn" title={t.review}>revisão</Badge>}
                       {t.importId && <Badge tone="muted" title="Veio de uma importação">imp.</Badge>}
-                      <button className="btn ghost sm" onClick={() => setEditing({ tx: t, ...txToValues(t, assets) })}>editar</button>
-                      <button className="btn ghost sm" onClick={() => setConfirmDel([t.id])} aria-label="Excluir">✕</button>
+                      {t.auto && <Badge tone="info" title={t.notes || ''}>automático</Badge>}
+                      {t.type === 'estorno' && <Badge tone="bad" title={t.reason || ''}>estorno</Badge>}
+                      {reversedIds.has(t.id) && <Badge tone="muted">estornado</Badge>}
+                      {t.type !== 'estorno' && !reversedIds.has(t.id) && (
+                        <>
+                          <button className="btn ghost sm" onClick={() => setEditing({ tx: t, ...txToValues(t, assets) })}>corrigir</button>
+                          <button className="btn ghost sm" onClick={() => setConfirmDel([t.id])} aria-label="Estornar">estornar</button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -125,7 +137,7 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
               {list.length} operações · valor somado {brl(total)}
               {sel.size > 0 && (
                 <>
-                  {' '}· {sel.size} selecionada(s) <button className="btn sm danger" onClick={() => setConfirmDel([...sel])}>Excluir selecionadas</button>
+                  {' '}· {sel.size} selecionada(s) <button className="btn sm danger" onClick={() => setConfirmDel([...sel])}>Estornar selecionadas</button>
                 </>
               )}
             </span>
@@ -143,15 +155,15 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
       )}
       <p className="muted" style={{ margin: 0, fontSize: 12 }}>{SHEETS[cat].hint}</p>
 
-      <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar operação" wide>
+      <Modal open={!!editing} onClose={() => setEditing(null)} title="Corrigir operação (estorno + novo lançamento)" wide>
         {editing && (
           <>
-            <p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>A versão anterior fica guardada na auditoria. A carteira é recalculada ao salvar.</p>
+            <p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>Livro só de inclusão: o lançamento original continua no histórico, anulado por um estorno, e a versão corrigida entra como novo lançamento. A carteira é recalculada ao salvar.</p>
             <EntryForm editing={editing} onDone={() => setEditing(null)} />
           </>
         )}
       </Modal>
-      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title={`Excluir ${confirmDel?.length ?? 0} operação(ões)?`}>
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title={`Estornar ${confirmDel?.length ?? 0} operação(ões)?`}>
         {confirmDel && (
           <div className="stack">
             <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 220, overflowY: 'auto', fontSize: 13 }}>
@@ -161,10 +173,11 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
               })}
               {confirmDel.length > 30 && <li>… e mais {confirmDel.length - 30}</li>}
             </ul>
-            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>Posição, preço médio, proventos, alocação e demais módulos serão recalculados. Os registros excluídos ficam guardados na auditoria.</p>
+            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>O lançamento não é apagado: recebe um estorno com o motivo, e posição, preço médio, proventos e demais módulos são recalculados.</p>
+            <label className="field"><span className="field-l">Motivo do estorno *</span><input id="estorno-motivo" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="ex.: lançamento em duplicidade" /></label>
             <div className="row" style={{ justifyContent: 'flex-end' }}>
               <button className="btn ghost" onClick={() => setConfirmDel(null)}>Cancelar</button>
-              <button className="btn danger" onClick={() => { const n = removeTransactions(confirmDel); setSel(new Set()); setConfirmDel(null); toast(`${n} operação(ões) excluída(s).`); }}>Excluir</button>
+              <button className="btn danger" disabled={reason.trim().length < 3} onClick={() => { const n = removeTransactions(confirmDel, reason.trim()); setSel(new Set()); setConfirmDel(null); setReason(''); toast(`${n} operação(ões) estornada(s).`); }}>Estornar</button>
             </div>
           </div>
         )}

@@ -12,6 +12,15 @@ import type { AssetClass, AssetStatus } from '../domain/types';
 import { CLASS_LABEL, CLASS_ORDER } from '../domain/types';
 import { toast } from '../components/toast';
 import { isHeld } from '../domain/calc/positions';
+import { Badge } from '../components/ui';
+import type { Asset } from '../domain/types';
+
+/** Último alerta da análise 360° que mudou de cor nos últimos 30 dias. */
+const recentChange = (a: Asset) => {
+  const lim = new Date(Date.now() - 30 * 86400000).toISOString();
+  const c = (a.alertChanges || []).filter((x) => x.at >= lim).pop();
+  return c ? `${c.key}: ${c.from} → ${c.to} em ${c.at.slice(0, 10).split('-').reverse().join('/')}` : null;
+};
 
 type SortKey = 'ticker' | 'value' | 'weight' | 'dy' | 'ratio' | 'score';
 
@@ -37,7 +46,7 @@ export default function Assets() {
       })
       .sort((x, y) => {
         const v = (o: typeof x) =>
-          sort.k === 'ticker' ? o.a.ticker : sort.k === 'value' ? o.value : sort.k === 'weight' ? o.weight : sort.k === 'dy' ? o.r.bazin.dyCurrent ?? -1 : sort.k === 'ratio' ? o.r.bazin.ratio ?? 999 : o.r.score;
+          sort.k === 'ticker' ? o.a.ticker : sort.k === 'value' ? o.value : sort.k === 'weight' ? o.weight : sort.k === 'dy' ? o.r.bazin.dyCurrent ?? -1 : sort.k === 'ratio' ? -(o.r.bazin.margin ?? -999) : o.r.score;
         const a = v(x);
         const b = v(y);
         return (a < b ? -1 : a > b ? 1 : 0) * sort.dir;
@@ -90,7 +99,8 @@ export default function Assets() {
                 {th('value', 'Valor')}
                 {th('weight', 'Peso')}
                 {th('dy', 'DY rec.')}
-                {th('ratio', 'Régua')}
+                {th('ratio', 'Margem')}
+                <th className="num">Preço de interesse</th>
                 {th('score', 'Ranking')}
                 <th></th>
               </tr>
@@ -111,14 +121,18 @@ export default function Assets() {
                   <td>
                     {r.bazin.applicable ? (
                       <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                        <MiniLadder r={r.bazin} /> <span className="mono" style={{ fontSize: 12 }}>{pct(r.bazin.ratio, 0)}</span>
+                        <MiniLadder r={r.bazin} /> <span className={`mono ${r.bazin.margin !== null && r.bazin.margin < 0 ? 'neg' : 'pos'}`} style={{ fontSize: 12 }}>{r.bazin.margin === null ? '—' : `${r.bazin.margin >= 0 ? '+' : ''}${pct(r.bazin.margin, 0)}`}</span>
                       </span>
                     ) : (
                       <span className="dim">n/a</span>
                     )}
                   </td>
+                  <td className="num" title={a.interestPrice ? `Manual: ${a.interestNote || 'sem justificativa'} (${a.interestDate || 'sem data'})` : 'Preço de oportunidade calculado (teto × (1 − margem))'}>
+                    {a.interestPrice ? <>{brl(a.interestPrice)} <span className="dim" style={{ fontSize: 11 }}>manual</span></> : r.bazin.opportunityPrice ? brl(r.bazin.opportunityPrice) : <span className="dim">—</span>}
+                  </td>
                   <td>
                     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                      {recentChange(a) && <Badge tone="warn" title={recentChange(a)!}>mudou</Badge>}
                       <span className="mono">{r.score}</span> <PriorityBadge p={r.priority} />
                     </span>
                   </td>
@@ -150,7 +164,7 @@ export default function Assets() {
           </table>
         </div>
         <p className="muted" style={{ fontSize: 12 }}>
-          Faixa da régua só para ações e FIIs. ETFs, Tesouro e cripto são avaliados por alocação e métricas próprias. <BandBadge b={null} /> = sem cotação ou sem proventos cadastrados.
+          Margem = (Teto − Preço) ÷ Teto, só para ações e FIIs; ETFs, Tesouro e cripto são avaliados por alocação. Preço de interesse: o manual (com justificativa e data, no cadastro) ou o preço de oportunidade calculado. “mudou” indica alerta da análise 360° que mudou de cor nos últimos 30 dias. <BandBadge b={null} /> = sem cotação ou sem proventos.
         </p>
       </Card>
       <Modal open={adding} onClose={() => setAdding(false)} title="Novo ativo" wide>

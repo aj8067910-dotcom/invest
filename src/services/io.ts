@@ -5,6 +5,7 @@ import { CLASS_LABEL, TX_LABEL } from '../domain/types';
 import { parseDate, parseNum, todayISO, uid } from '../domain/util';
 import type { Position } from '../domain/calc/positions';
 import { makeAsset } from '../domain/seed';
+import { tradeDateFromSettlement } from '../domain/b3calendar';
 
 const norm = (s: unknown) =>
   String(s ?? '')
@@ -191,7 +192,7 @@ function parseB3(rows: Record<string, unknown>[], assets: Asset[], kind: 'mov' |
       const type: TxType | null = tipo.startsWith('compra') ? 'compra' : tipo.startsWith('venda') ? 'venda' : null;
       if (!type) return ignored.set(tipo || '—', (ignored.get(tipo || '—') || 0) + 1);
       const a = resolve(code);
-      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, price, fees: 0, amount: Math.abs(value ?? qty * (price ?? 0)), notes: 'Extrato B3 (negociação)' });
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, price, fees: 0, amount: Math.abs(value ?? qty * (price ?? 0)), source: 'B3', notes: 'Extrato B3 (negociação, data do pregão)' } as any);
       return;
     }
     const date = parseDate(pick(row, 'data'));
@@ -204,7 +205,12 @@ function parseB3(rows: Record<string, unknown>[], assets: Asset[], kind: 'mov' |
     if (!date || !produto) return errors.push(`Linha ${line}: data ou produto ausente.`);
     const credit = dir.startsWith('credito');
     let type: TxType | null = null;
-    if (mov.includes('liquidacao') || mov === 'compra' || mov === 'venda') type = credit ? 'compra' : 'venda';
+    if (mov.includes('leilao')) type = 'leilao_fracao';
+    else if (mov.includes('bonificacao')) type = credit ? 'bonificacao' : null;
+    else if (mov.includes('desdobr')) type = credit ? 'desdobramento' : null;
+    else if (mov.includes('grupament')) type = !credit ? 'grupamento' : null;
+    else if (mov.includes('direito') && mov.includes('subscri')) type = credit ? 'direito_subscricao' : null;
+    else if (mov.includes('liquidacao') || mov === 'compra' || mov === 'venda') type = credit ? 'compra' : 'venda';
     else if (mov.startsWith('vencimento') || mov.startsWith('resgate')) type = 'venda';
     else if (credit && mov.includes('juros sobre capital')) type = 'jcp';
     else if (credit && mov.includes('dividendo')) type = 'dividendo';
@@ -213,14 +219,23 @@ function parseB3(rows: Record<string, unknown>[], assets: Asset[], kind: 'mov' |
     else if (credit && (mov === 'juros' || mov.startsWith('pagamento de juros') || mov.includes('cupom'))) type = 'juros';
     if (!type) return ignored.set(mov || '—', (ignored.get(mov || '—') || 0) + 1);
     const a = resolve(produto);
-    if (type === 'compra' || type === 'venda') {
+    if (type === 'bonificacao' || type === 'desdobramento' || type === 'grupamento' || type === 'direito_subscricao') {
+      if (!qty) return errors.push(`Linha ${line}: quantidade ausente no evento.`);
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty: Math.abs(qty), price: type === 'bonificacao' ? price : null, amount: 0, source: 'B3', review: type === 'bonificacao' ? 'Bonificação importada do extrato: confira o custo unitário atribuído informado pela companhia.' : null, notes: 'Extrato B3 (movimentação)' } as any);
+    } else if (type === 'leilao_fracao') {
+      if (!qty || !value) return errors.push(`Linha ${line}: leilão de fração sem quantidade ou valor.`);
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty: Math.abs(qty), amount: Math.abs(value), source: 'B3', notes: 'Extrato B3 (movimentação)' } as any);
+    } else if (type === 'compra' || type === 'venda') {
       if (!qty) return errors.push(`Linha ${line}: quantidade ausente.`);
       const amount = value ?? (price !== null ? qty * price : null);
       if (amount === null) return errors.push(`Linha ${line}: ${produto} sem preço/valor no extrato; lance esta operação manualmente.`);
-      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, price: price ?? amount / qty, fees: 0, amount: Math.abs(amount), notes: 'Extrato B3 (movimentação)' });
+      // o extrato de Movimentação traz a data de LIQUIDAÇÃO; a posição conta pela data do PREGÃO
+      const isTd = /^tesouro/i.test(produto);
+      const trade = isTd ? date : tradeDateFromSettlement(date);
+      txs.push({ date: trade, type, assetId: a.id, ticker: a.ticker, qty, price: price ?? amount / qty, fees: 0, amount: Math.abs(amount), source: 'B3', notes: isTd ? 'Extrato B3 (movimentação)' : `Extrato B3 (movimentação): liquidação em ${date.split('-').reverse().join('/')}, pregão estimado ${trade.split('-').reverse().join('/')} (D+2)` } as any);
     } else {
       if (!value) return errors.push(`Linha ${line}: provento sem valor.`);
-      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, amount: Math.abs(value), notes: 'Extrato B3 (movimentação)' });
+      txs.push({ date, type, assetId: a.id, ticker: a.ticker, qty, amount: Math.abs(value), payDate: date, source: 'B3', notes: 'Extrato B3 (movimentação)' } as any);
     }
   });
   return {

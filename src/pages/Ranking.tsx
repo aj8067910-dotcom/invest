@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDerived } from '../store/derived';
 import { useStore } from '../store/store';
-import { AlertList, Card, Disclaimer, Meter, NumInput, ScoreRing } from '../components/ui';
+import { AlertList, Badge, Card, Disclaimer, Meter, NumInput, ScoreRing } from '../components/ui';
 import { AssetLink, BandBadge, ClassBadge, PriorityBadge } from '../components/common';
 import { PRIORITY_INFO, type Priority } from '../domain/calc/scoring';
 import { CRITERION_LABEL, type Criterion } from '../domain/types';
@@ -31,7 +31,7 @@ export default function Ranking() {
         <div>
           <div className="kicker">Priorização</div>
           <h1>Ranking de aportes</h1>
-          <p>Pontuação 0–100 com 12 critérios ponderados. Qualidade e sustentabilidade pesam mais que o DY isolado. Travas impedem que dividendos extraordinários, fundamentos deteriorados ou risco elevado levem um ativo ao topo.</p>
+          <p>Classificação objetiva (Etapa 8): margem = (Teto − Preço) ÷ Teto; Aguardar abaixo de 0%, Manutenção até a margem exigida, Oportunidade a partir dela se aprovado no filtro de qualidade. Um alerta vermelho rebaixa para Aguardar; dois amarelos, para Manutenção; peso acima do alvo ou sobreposição econômica cai uma faixa. A pontuação 0–100 só ordena os ativos dentro de cada faixa.</p>
         </div>
         <button className="btn" onClick={() => setShowW((x) => !x)}>{showW ? 'Ocultar pesos' : 'Ajustar pesos'}</button>
       </div>
@@ -72,7 +72,8 @@ export default function Ranking() {
                 <th>Régua</th>
                 {SHOW.map((k) => <th key={k} style={{ minWidth: 90 }}>{CRITERION_LABEL[k].split(' ')[0]}</th>)}
                 <th className="num">Dados</th>
-                <th>Justificativa</th>
+                <th>Filtro de qualidade</th>
+                <th>Motivo</th>
               </tr>
             </thead>
             <tbody>
@@ -97,11 +98,12 @@ export default function Ranking() {
                         );
                       })}
                       <td className="num">{pct(r.coverage, 0)}</td>
+                      <td>{r.bazin.applicable ? (r.quality.passed ? <Badge tone="good">● aprovado</Badge> : <Badge tone="warn" title={r.quality.failures.join('; ')}>▲ reprovado</Badge>) : <span className="dim">alocação</span>}</td>
                       <td className="muted" style={{ fontSize: 12, maxWidth: 320 }}>{r.reasons[r.reasons.length - 1] || r.reasons[0]}</td>
                     </tr>
                     {open === r.assetId && (
                       <tr>
-                        <td colSpan={6 + SHOW.length + 2} style={{ background: 'var(--bg2)' }}>
+                        <td colSpan={6 + SHOW.length + 3} style={{ background: 'var(--bg2)' }}>
                           <div className="grid g2" style={{ padding: '6px 0' }}>
                             <div>
                               <b style={{ fontSize: 12.5 }}>Justificativa</b>

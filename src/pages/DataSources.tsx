@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useDerived } from '../store/derived';
-import { makeBackup, useStore, type BackupData } from '../store/store';
+import { hasPreMigrationBackup, makeBackup, restorePreMigrationBackup, useStore, type BackupData } from '../store/store';
 import { Badge, Card, DataTag, Disclaimer, Field, Modal } from '../components/ui';
 import { AssetLink, ClassBadge } from '../components/common';
 import { ageDays, dateBR, dateTimeBR, num } from '../domain/format';
@@ -12,13 +12,13 @@ import { CloudCard } from '../components/CloudCard';
 import { RobotCard } from '../components/RobotCard';
 
 const SOURCES: { name: string; what: string; status: 'auto' | 'manual'; url: string }[] = [
-  { name: 'Robô diário (GitHub Actions) — Yahoo Finance', what: 'Cotações de ações, FIIs e ETFs da B3, 10 anos de proventos e preço médio anual. Sem token. Roda 3× por dia útil.', status: 'auto', url: 'https://github.com/aj8067910-dotcom/invest/actions' },
-  { name: 'brapi.dev (opcional)', what: 'Só para ativos que você cadastrar e que não estejam na lista do robô (exige token)', status: 'auto', url: 'https://brapi.dev' },
-  { name: 'Banco Central — SGS', what: 'Selic meta, IPCA 12m, CDI, dólar PTAX', status: 'auto', url: 'https://www3.bcb.gov.br/sgspub' },
-  { name: 'CoinGecko', what: 'Preço de BTC e USDC em reais', status: 'auto', url: 'https://www.coingecko.com' },
-  { name: 'Tesouro Transparente (Tesouro Nacional)', what: 'PU e taxas oficiais dos títulos do Tesouro Direto, coletados pelo robô', status: 'auto', url: 'https://www.tesourotransparente.gov.br/ckan/dataset/taxas-dos-titulos-ofertados-pelo-tesouro-direto' },
-  { name: 'CVM — RAD / Fundos.NET', what: 'Fatos relevantes, ITR/DFP, informes de FIIs (consulta e registro manual)', status: 'manual', url: 'https://www.rad.cvm.gov.br/ENET/frmConsultaExternaCVM.aspx' },
-  { name: 'Relações com Investidores / gestores', what: 'Releases, relatórios gerenciais, vacância, inadimplência, payout', status: 'manual', url: 'https://fnet.bmfbovespa.com.br/fnet/publico/abrirGerenciadorDocumentosCVM' },
+  { name: '1. B3 — COTAHIST e listados', what: 'Fechamento oficial, liquidez (21 pregões), proventos com data-com, pagamento e tipo, eventos (bonificação, desdobramento) e segmento de listagem', status: 'auto', url: 'https://www.b3.com.br' },
+  { name: '2. CVM — dados abertos', what: 'DFP consolidada de 5 anos (balanço, DRE, DFC) e Informe Mensal Estruturado de FII (VP/cota, cotistas, PL, taxa)', status: 'auto', url: 'https://dados.cvm.gov.br' },
+  { name: '3. Relações com investidores', what: 'Perfil da dívida, indicadores de bancos/seguradoras, dados de FII de relatório gerencial (preenchimento manual com fonte e data)', status: 'manual', url: 'https://www.rad.cvm.gov.br/ENET/frmConsultaExternaCVM.aspx' },
+  { name: '4. Banco Central — SGS', what: 'Selic, CDI e IPCA (último valor e séries mensais para TWR × CDI e correção pelo IPCA), dólar PTAX', status: 'auto', url: 'https://www3.bcb.gov.br/sgspub' },
+  { name: '5. Tesouro Nacional', what: 'PU e taxas do Tesouro Direto e NTN-B de referência (custo de oportunidade)', status: 'auto', url: 'https://www.tesourotransparente.gov.br' },
+  { name: 'Fallback: Yahoo Finance', what: 'Só quando a B3 não traz o dado: preços diários (volatilidade, 52 semanas), proventos anteriores à janela da B3 (data-com = pregão anterior à data-ex, tipo não informado → confiabilidade estimada)', status: 'auto', url: 'https://finance.yahoo.com' },
+  { name: 'Fallback: CoinGecko / brapi.dev', what: 'Cripto (CoinGecko); ativos fora da lista do robô (brapi, token opcional)', status: 'auto', url: 'https://www.coingecko.com' },
 ];
 
 export default function DataSources() {
@@ -136,7 +136,11 @@ export default function DataSources() {
             <button className="btn" onClick={() => fileRef.current?.click()}>Restaurar backup</button>
           </div>
           <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '16px 0' }} />
-          <button className="btn danger sm" onClick={() => setReset(true)}>Restaurar cadastro inicial (apaga tudo)</button>
+          <div className="row">
+            <button className="btn sm" onClick={async () => { if (!(await hasPreMigrationBackup())) return toast('Não há cópia de segurança de migração neste aparelho.', true); const r = await restorePreMigrationBackup(); if (r) { toast(`Cópia de ${dateTimeBR(r.at)} (esquema v${r.version}) restaurada. Recarregando…`); setTimeout(() => location.reload(), 1200); } }}>Restaurar cópia anterior à migração</button>
+            <button className="btn danger sm" onClick={() => setReset(true)}>Restaurar cadastro inicial (apaga tudo)</button>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Antes de cada migração de esquema, o sistema guarda uma cópia integral dos dados neste aparelho; o backup JSON baixado acima é o JSON consolidado (livro, ativos, parâmetros, auditoria, importações e conciliações).</p>
         </Card>
         <Card title="Log de atualizações">
           {syncLog.length ? (
