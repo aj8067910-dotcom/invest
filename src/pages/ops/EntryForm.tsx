@@ -6,7 +6,7 @@ import { SHEETS, convertForForm, optionsFor, DATE_KEYS, NUM_KEYS, planToAsset } 
 import { computePosition } from '../../domain/calc/positions';
 import { txOrder } from '../../domain/ledger';
 import { Field, NumInput } from '../../components/ui';
-import { brl, qtyFmt } from '../../domain/format';
+import { brl, priceFmt, qtyFmt } from '../../domain/format';
 import { todayISO } from '../../domain/util';
 import { toast } from '../../components/toast';
 
@@ -198,7 +198,7 @@ export function EntryForm({ initialCat = 'acoes', preset, editing, onDone }: { i
       )}
       {preview && (
         <div className="note">
-          <b>{preview.a.ticker}</b>: posição {qtyFmt(preview.before.qty)} → <b>{qtyFmt(preview.after.qty)}</b> · preço médio {brl(preview.before.avgPrice)} → <b>{brl(preview.after.avgPrice)}</b>
+          <b>{preview.a.ticker}</b>: posição {qtyFmt(preview.before.qty, preview.a.class)} → <b>{qtyFmt(preview.after.qty, preview.a.class)}</b> · preço médio {priceFmt(preview.before.avgPrice, preview.a.class)} → <b>{priceFmt(preview.after.avgPrice, preview.a.class)}</b>
           {preview.after.realized !== preview.before.realized && <> · resultado realizado nesta venda <b className={preview.after.realized - preview.before.realized >= 0 ? 'pos' : 'neg'}>{brl(preview.after.realized - preview.before.realized)}</b></>}
           {preview.reviews.map((r, k) => <div key={k} className="warn-t">Revisão: {r.message}</div>)}
         </div>

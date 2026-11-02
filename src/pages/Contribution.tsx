@@ -109,7 +109,7 @@ export default function Contribution() {
                     <td><AssetLink a={l.asset} /> <ClassBadge c={l.asset.class} /></td>
                     <td><ScoreRing score={l.result.score} size={36} /></td>
                     <td><PriorityBadge p={l.result.priority} /></td>
-                    <td className="num">{qtyFmt(l.qty)}</td>
+                    <td className="num">{qtyFmt(l.qty, l.asset.class)}</td>
                     <td className="num">{brl(l.price)}</td>
                     <td className="num">{brl(l.cost)}</td>
                     <td className="num">{pct(plan.invested ? (l.cost / plan.invested) * 100 : 0, 0)}</td>
@@ -176,7 +176,7 @@ export default function Contribution() {
         <p>O sistema <b>não executa ordens</b>. Use isto somente depois de comprar na {d.settings.profile.broker}. Serão lançados:</p>
         <ul>
           <li>Aporte de {brl(amount)} em {date}</li>
-          {plan.lines.map((l) => <li key={l.asset.id}>Compra de {qtyFmt(l.qty)} {l.asset.ticker} a {brl(l.price)}</li>)}
+          {plan.lines.map((l) => <li key={l.asset.id}>Compra de {qtyFmt(l.qty, l.asset.class)} {l.asset.ticker} a {brl(l.price)}</li>)}
         </ul>
         <p className="muted">Preços e taxas podem ser ajustados depois na Central de Operações.</p>
         <div className="row" style={{ justifyContent: 'flex-end' }}>

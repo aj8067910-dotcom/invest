@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDerived } from '../store/derived';
 import { Card, DataTag, Field, NumInput, Stat } from './ui';
-import { brl, pct, qtyFmt } from '../domain/format';
+import { brl, pct, priceFmt, qtyFmt } from '../domain/format';
 import { isHeld } from '../domain/calc/positions';
 import { projectedPerUnit, recovery, simulateAporte } from '../domain/calc/yoc';
 import { isNum } from '../domain/util';
@@ -82,7 +82,7 @@ export function IncomeTools({ suggestedId }: { suggestedId?: string }) {
             </div>
           </Field>
           {mode === 'valor' ? <Field label="Valor do aporte" hint="Quantidade arredondada para baixo (não passa do valor)"><NumInput value={value} onChange={setValue} /></Field> : <Field label="Quantidade"><NumInput value={qty} onChange={setQty} /></Field>}
-          <Field label="Cotação usada"><input value={price ? brl(price) : 'sem cotação'} disabled /></Field>
+          <Field label="Cotação usada"><input value={price ? priceFmt(price, a?.class) : 'sem cotação'} disabled /></Field>
           <Field label="DY usado na simulação" hint={dyHist ? `Histórico: ${pct(dyHist, 2)} (${unit?.label})` : 'Sem histórico: informe um DY'}>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <NumInput value={dyUsed === null ? null : Math.round(dyUsed * 100) / 100} suffix="%" onChange={setDyEdit} />
@@ -93,7 +93,7 @@ export function IncomeTools({ suggestedId }: { suggestedId?: string }) {
         {sim && (
           <>
             <div className="grid g4" style={{ marginTop: 12 }}>
-              <Stat label="Quantidade adquirida" value={qtyFmt(sim.qty)} sub={`${brl(price)} por unidade`} />
+              <Stat label="Quantidade adquirida" value={qtyFmt(sim.qty, a!.class)} sub={`${priceFmt(price, a!.class)} por unidade`} />
               <Stat label="Valor investido" value={brl(sim.invested)} />
               <Stat label="Proventos anuais estimados" value={brl(sim.annual)} sub={`DY ${pct(sim.dyUsed, 2)}${dyEdit !== null ? ' (editado)' : ''}`} tone="pos" tag={<DataTag kind="projecao" />} />
               <Stat label="Média mensal equivalente" value={brl(sim.monthlyEquivalent)} sub={sim.payments.perYear >= 10 ? 'pagamento mensal' : 'equivalência, não pagamento mensal'} tag={<DataTag kind="projecao" />} />

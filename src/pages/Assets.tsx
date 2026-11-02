@@ -7,7 +7,7 @@ import { AssetLink, BandBadge, ClassBadge, PriorityBadge, QuoteCell } from '../c
 import { AssetForm } from '../components/AssetForm';
 import { MiniLadder } from '../components/Ladder';
 import { makeAsset } from '../domain/seed';
-import { brl, pct, qtyFmt } from '../domain/format';
+import { brl, pct, priceFmt, qtyFmt } from '../domain/format';
 import type { AssetClass, AssetStatus } from '../domain/types';
 import { CLASS_LABEL, CLASS_ORDER } from '../domain/types';
 import { toast } from '../components/toast';
@@ -37,7 +37,7 @@ export default function Assets() {
   const move = (a: Asset) => {
     const to: AssetStatus = a.status === 'carteira' ? 'watchlist' : 'carteira';
     const p = d.positions[a.id];
-    if (to === 'watchlist' && isHeld(p) && !confirm(`${a.ticker} ainda tem posição (${qtyFmt(p.qty)}). Ela continua no patrimônio e no histórico; só a lista muda. Mover para a watchlist?`)) return;
+    if (to === 'watchlist' && isHeld(p) && !confirm(`${a.ticker} ainda tem posição (${qtyFmt(p.qty, a.class)}). Ela continua no patrimônio e no histórico; só a lista muda. Mover para a watchlist?`)) return;
     updateAsset(a.id, { status: to });
     toast(`${a.ticker} movido para a ${to === 'carteira' ? 'carteira' : 'watchlist'}.`);
   };
@@ -131,8 +131,8 @@ export default function Assets() {
                   <td>
                     <ClassBadge c={a.class} /> <span className="tk-sub" style={{ display: 'inline' }}>{a.sector}</span>
                   </td>
-                  <td className="num">{p.qty > 0 ? qtyFmt(p.qty) : p.valueOnly ? <span className="dim">por valor</span> : <span className="dim">—</span>}</td>
-                  <td className="num">{p.qty > 0 ? brl(p.avgPrice) : '—'}</td>
+                  <td className="num">{p.qty > 0 ? qtyFmt(p.qty, a.class) : p.valueOnly ? <span className="dim">por valor</span> : <span className="dim">—</span>}</td>
+                  <td className="num">{p.qty > 0 ? priceFmt(p.avgPrice, a.class) : '—'}</td>
                   <td><QuoteCell a={a} /></td>
                   <td className="num">{value ? brl(value) : '—'}</td>
                   <td className="num" title={capOf(a, d.settings).own ? 'Teto definido para o ativo' : 'Teto geral por ativo (Parâmetros)'}>

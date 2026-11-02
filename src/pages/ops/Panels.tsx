@@ -5,7 +5,7 @@ import { useDerived } from '../../store/derived';
 import { Badge, Card, DataTag, Empty, Modal, Stat, Why } from '../../components/ui';
 import { ChartTip } from '../../components/common';
 import { TX_LABEL, INCOME_TX, type AuditEntry, type Transaction } from '../../domain/types';
-import { brl, brlShort, dateBR, dateTimeBR, monthBR, pct, qtyFmt } from '../../domain/format';
+import { brl, brlShort, dateBR, dateTimeBR, monthBR, pct, priceFmt, qtyFmt } from '../../domain/format';
 import { investedSeries, monthlyCashflows, yearlyCashflows } from '../../domain/calc/history';
 import { monthlyGains } from '../../domain/calc/gains';
 import { BASKET_LABEL, type Basket } from '../../domain/calc/positions';
@@ -33,10 +33,10 @@ export function AssetLedger({ assetId, onSelect }: { assetId: string | null; onS
         <span className="muted" style={{ fontSize: 12.5 }}>{p.ledger.length} movimentações em ordem cronológica</span>
       </div>
       <div className="grid g6">
-        <Stat label="Quantidade adquirida" value={qtyFmt(p.qtyBought)} sub={`custo total ${brl(p.totalBought)}`} />
-        <Stat label="Quantidade vendida" value={qtyFmt(p.qtySold)} sub={`recebido ${brl(p.totalSold)}`} />
-        <Stat label="Quantidade atual" value={p.valueOnly ? 'por valor' : qtyFmt(p.qty)} tone="info" />
-        <Stat label="Preço médio" value={brl(p.avgPrice)} sub={`custo da posição ${brl(p.costBasis)}`} />
+        <Stat label="Quantidade adquirida" value={qtyFmt(p.qtyBought, a.class)} sub={`custo total ${brl(p.totalBought)}`} />
+        <Stat label="Quantidade vendida" value={qtyFmt(p.qtySold, a.class)} sub={`recebido ${brl(p.totalSold)}`} />
+        <Stat label="Quantidade atual" value={p.valueOnly ? 'por valor' : qtyFmt(p.qty, a.class)} tone="info" />
+        <Stat label="Preço médio" value={priceFmt(p.avgPrice, a.class)} sub={`custo da posição ${brl(p.costBasis)}`} />
         <Stat label="Resultado realizado" value={brl(p.realized)} tone={p.realized >= 0 ? 'pos' : 'neg'} />
         <Stat label="Resultado não realizado" value={p.unrealized === null ? '—' : brl(p.unrealized)} tone={(p.unrealized ?? 0) >= 0 ? 'pos' : 'neg'} sub={p.hasQuote ? `cotação ${brl(p.price)}` : 'sem cotação'} />
       </div>
@@ -57,11 +57,11 @@ export function AssetLedger({ assetId, onSelect }: { assetId: string | null; onS
               <tr key={l.tx.id}>
                 <td className="nowrap">{dateBR(l.tx.date)}</td>
                 <td>{TX_LABEL[l.tx.type]}{l.tx.reinvest ? ' · reinvest.' : ''}{l.tx.review && <> <Badge tone="warn" title={l.tx.review}>revisão</Badge></>}</td>
-                <td className="num">{l.tx.qty ? qtyFmt(l.tx.qty) : '—'}</td>
-                <td className="num">{l.tx.price ? brl(l.tx.price) : '—'}</td>
+                <td className="num">{l.tx.qty ? qtyFmt(l.tx.qty, a.class) : '—'}</td>
+                <td className="num">{l.tx.price ? priceFmt(l.tx.price, a.class) : '—'}</td>
                 <td className={`num ${INCOME_TX.includes(l.tx.type) ? 'pos' : ''}`}>{brl(l.tx.amount)}</td>
-                <td className="num">{qtyFmt(l.qtyAfter)}</td>
-                <td className="num">{l.qtyAfter ? brl(l.avgAfter) : '—'}</td>
+                <td className="num">{qtyFmt(l.qtyAfter, a.class)}</td>
+                <td className="num">{l.qtyAfter ? priceFmt(l.avgAfter, a.class) : '—'}</td>
                 <td className="num">{brl(l.costAfter)}</td>
                 <td className={`num ${l.realized > 0 ? 'pos' : l.realized < 0 ? 'neg' : 'dim'}`}>{l.realized ? brl(l.realized) : '—'}</td>
                 <td className="dim" style={{ fontSize: 12 }}>{l.note || l.tx.notes || ''}{l.tx.broker ? ` · ${l.tx.broker}` : ''}</td>

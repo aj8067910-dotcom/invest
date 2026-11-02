@@ -10,7 +10,7 @@ import { BandBadge, ChartTip, ClassBadge, PriorityBadge } from '../components/co
 import { Ladder } from '../components/Ladder';
 import { AssetForm } from '../components/AssetForm';
 import { FUND_FORMULA, type FundKey } from '../domain/calc/cvmFundamentals';
-import { brl, dateBR, dateTimeBR, num, pct, qtyFmt, signedPct } from '../domain/format';
+import { brl, dateBR, dateTimeBR, num, pct, priceFmt, qtyFmt, signedPct } from '../domain/format';
 import { BAND_INFO } from '../domain/calc/bazin';
 import { PRIORITY_INFO } from '../domain/calc/scoring';
 import { Analysis360Tab } from './Analysis360';
@@ -119,7 +119,7 @@ function Header({ a }: { a: Asset }) {
           </button>
         </span>
         <span className="muted" style={{ fontSize: 12.5, marginLeft: 'auto' }}>
-          {p.qty > 0 ? `${qtyFmt(p.qty)} un. · PM ${brl(p.avgPrice)} · ${brl(p.marketValue)}` : p.valueOnly ? `Aplicado ${brl(p.costBasis)} (renda fixa por valor)` : 'Sem posição'}
+          {p.qty > 0 ? `${qtyFmt(p.qty, a.class)} un. · PM ${priceFmt(p.avgPrice, a.class)} · ${brl(p.marketValue)}` : p.valueOnly ? `Aplicado ${brl(p.costBasis)} (renda fixa por valor)` : 'Sem posição'}
         </span>
       </div>
     </div>
@@ -134,7 +134,7 @@ function Summary({ a }: { a: Asset }) {
   return (
     <div className="stack">
       <div className="grid g6">
-        <Stat label="Quantidade" value={qtyFmt(p.qty)} sub={p.firstBuy ? `desde ${dateBR(p.firstBuy)}` : '—'} />
+        <Stat label="Quantidade" value={qtyFmt(p.qty, a.class)} sub={p.firstBuy ? `desde ${dateBR(p.firstBuy)}` : '—'} />
         <Stat label="Preço médio" value={brl(p.avgPrice)} sub={`custo ${brl(p.costBasis)}`} />
         <Stat label="Valor atual" value={brl(p.qty ? p.marketValue : 0)} sub={p.hasQuote ? 'a mercado' : 'a custo (sem cotação)'} />
         <Stat label="Valorização" value={p.unrealized === null ? '—' : brl(p.unrealized)} tone={(p.unrealized ?? 0) >= 0 ? 'pos' : 'neg'} sub={p.costBasis && p.unrealized !== null ? signedPct((p.unrealized / p.costBasis) * 100) : ''} />
@@ -185,7 +185,7 @@ function Summary({ a }: { a: Asset }) {
                   <tr key={t.id}>
                     <td>{dateBR(t.date)}</td>
                     <td>{TX_LABEL[t.type]}{t.reinvest ? ' (reinvest.)' : ''}</td>
-                    <td className="num">{t.qty ? qtyFmt(t.qty) : '—'}</td>
+                    <td className="num">{t.qty ? qtyFmt(t.qty, a.class) : '—'}</td>
                     <td className="num">{brl(t.price)}</td>
                     <td className={`num ${INCOME_TX.includes(t.type) ? 'pos' : ''}`}>{brl(t.amount)}</td>
                   </tr>
@@ -625,7 +625,7 @@ function ClassMetrics({ a }: { a: Asset }) {
         <dl className="kv">
           <dt>Papel na carteira</dt><dd>{a.crypto?.role || '—'}</dd>
           <dt>Preço (BRL)</dt><dd>{brl(a.quote.price)}</dd>
-          <dt>Quantidade</dt><dd>{qtyFmt(p.qty)}</dd>
+          <dt>Quantidade</dt><dd>{qtyFmt(p.qty, a.class)}</dd>
           <dt>Preço médio</dt><dd>{brl(p.avgPrice)}</dd>
           <dt>Variação vs PM</dt><dd>{p.unrealized !== null && p.costBasis ? signedPct((p.unrealized / p.costBasis) * 100) : '—'}</dd>
           <dt>Classe cripto na carteira</dt><dd>{pct(cls.current)} (alvo {pct(cls.target, 0)})</dd>

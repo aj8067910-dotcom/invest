@@ -14,7 +14,12 @@ export const brlShort = (v: number | null | undefined) => {
 export const num = (v: number | null | undefined, d = 2, empty = '—') => (isNum(v) ? numFmt(d).format(v) : empty);
 export const pct = (v: number | null | undefined, d = 1, empty = '—') => (isNum(v) ? numFmt(d).format(v) + '%' : empty);
 export const signedPct = (v: number | null | undefined, d = 1) => (isNum(v) ? (v > 0 ? '+' : '') + numFmt(d).format(v) + '%' : '—');
-export const qtyFmt = (v: number) => (Number.isInteger(v) ? numFmt(0).format(v) : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 8 }).format(v));
+/** Quantidade: criptoativos sempre com 8 casas (1 satoshi = 0,00000001 BTC); demais até 8 casas, sem zeros à direita. */
+export const qtyFmt = (v: number, cls?: string) =>
+  cls === 'cripto' ? numFmt(8).format(v) : Number.isInteger(v) ? numFmt(0).format(v) : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 8 }).format(v);
+/** Preço unitário: criptoativos com até 8 casas (mín. 2), para não perder centavos de stablecoins e frações. */
+export const priceFmt = (v: number | null | undefined, cls?: string) =>
+  cls === 'cripto' && isNum(v) ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 8 }).format(v) : brl(v);
 export const dateBR = (iso: string | null | undefined) => {
   if (!iso) return '—';
   const [y, m, d] = iso.slice(0, 10).split('-');

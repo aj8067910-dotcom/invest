@@ -5,7 +5,7 @@ import { OP_CATEGORIES, OP_CATEGORY_LABEL, TX_LABEL } from '../../domain/types';
 import { SHEETS, exportRows, txToValues } from '../../domain/opsheet';
 import { categoryOf, txOrder } from '../../domain/ledger';
 import { Badge, Empty, Modal } from '../../components/ui';
-import { brl } from '../../domain/format';
+import { brl, priceFmt, qtyFmt } from '../../domain/format';
 import { exportOperationsCsv, exportOperationsXlsx } from '../../services/opsio';
 import { EntryForm } from './EntryForm';
 import { toast } from '../../components/toast';
@@ -16,6 +16,7 @@ const MONEY = /^(precoUnitario|total|taxas|valorLiquido|valorAplicado|valorResga
 
 export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => void }) {
   const { transactions, assets, removeTransactions } = useStore();
+  const clsOf = (t: { assetId?: string | null }) => assets.find((a) => a.id === t.assetId)?.class;
   const [cat, setCat] = useState<OpCategory>('acoes');
   const [q, setQ] = useState('');
   const [type, setType] = useState<TxType | ''>('');
@@ -112,7 +113,7 @@ export function OpsSheet({ onOpenAsset }: { onOpenAsset: (assetId: string) => vo
                       const isNum = typeof v === 'number';
                       if (f.key === 'ativo' && t.assetId)
                         return <td key={f.key}><button className="btn ghost sm tk" style={{ padding: 0 }} onClick={() => onOpenAsset(t.assetId!)} title="Histórico do ativo">{String(v)}</button></td>;
-                      return <td key={f.key} className={isNum ? 'num' : f.key === 'observacoes' ? 'dim' : ''} style={f.key === 'observacoes' ? { fontSize: 12, maxWidth: 220 } : undefined}>{isNum ? (MONEY.test(f.key) ? brl(v as number) : (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 8 })) : String(v ?? '')}</td>;
+                      return <td key={f.key} className={isNum ? 'num' : f.key === 'observacoes' ? 'dim' : ''} style={f.key === 'observacoes' ? { fontSize: 12, maxWidth: 220 } : undefined}>{isNum ? (MONEY.test(f.key) ? (/Unitario$/.test(f.key) ? priceFmt(v as number, clsOf(t)) : brl(v as number)) : /quantidade/i.test(f.key) ? qtyFmt(v as number, clsOf(t)) : (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 8 })) : String(v ?? '')}</td>;
                     })}
                     <td className="nowrap">
                       {t.review && <Badge tone="warn" title={t.review}>revisão</Badge>}

@@ -3,7 +3,7 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, T
 import { useDerived } from '../store/derived';
 import { Card, DataTag, Empty, Stat } from './ui';
 import { AssetLink, ChartTip } from './common';
-import { brl, brlShort, dateBR, monthBR, pct, qtyFmt } from '../domain/format';
+import { brl, brlShort, dateBR, monthBR, pct, priceFmt, qtyFmt } from '../domain/format';
 import { yocHistory } from '../domain/calc/yoc';
 import { addMonths } from '../domain/util';
 
@@ -83,8 +83,8 @@ export function YocPanel() {
             {y.rows.map((r) => (
               <tr key={r.asset.id}>
                 <td><AssetLink a={r.asset} /></td>
-                <td className="num">{r.qty ? qtyFmt(r.qty) : <span className="dim">zerada</span>}</td>
-                <td className="num">{r.qty ? brl(r.avgPrice) : '—'}</td>
+                <td className="num">{r.qty ? qtyFmt(r.qty, r.asset.class) : <span className="dim">zerada</span>}</td>
+                <td className="num">{r.qty ? priceFmt(r.avgPrice, r.asset.class) : '—'}</td>
                 <td className="num">{brl(r.cost)}</td>
                 <td className="num">{brl(r.marketValue)}</td>
                 <td className="num">{pct(r.dyMarket, 2)}</td>

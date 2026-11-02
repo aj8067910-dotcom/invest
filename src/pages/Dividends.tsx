@@ -187,7 +187,7 @@ export default function Dividends() {
                   <td>{freq}</td>
                   <td className="num" title={d.fund[a.id]?.src.payout === 'cvm' ? `CVM — DFP ${d.fund[a.id].cvm?.year}` : d.fund[a.id]?.src.payout === 'manual' ? 'manual' : 'sem dado'}>{a.class === 'fii' ? '≥95%' : pct(d.fund[a.id]?.asset.fundamentals.payout, 0)}</td>
                   <td className={`num ${sust === null ? '' : sust >= 65 ? 'pos' : sust < 40 ? 'neg' : 'warn-t'}`}>{sust ?? '—'}</td>
-                  <td className="num">{p.qty ? qtyFmt(p.qty) : '—'}</td>
+                  <td className="num">{p.qty ? qtyFmt(p.qty, a.class) : '—'}</td>
                   <td className="num">{fw ? brl(fw.annual) : '—'}</td>
                   <td className="num pos">{p.income ? brl(p.income) : '—'}</td>
                 </tr>

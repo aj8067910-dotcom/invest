@@ -113,7 +113,7 @@ export default function Dashboard() {
                     <div className="row between">
                       <AssetLink a={l.asset} sub={false} />
                       <span className="mono">
-                        {qtyFmt(l.qty)} × {brl(l.price)} = <b>{brl(l.cost)}</b>
+                        {qtyFmt(l.qty, l.asset.class)} × {brl(l.price)} = <b>{brl(l.cost)}</b>
                       </span>
                     </div>
                     <div className="muted" style={{ fontSize: 12.5 }}>{l.why.slice(0, 2).join(' ')}</div>

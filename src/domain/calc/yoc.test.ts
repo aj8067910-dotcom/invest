@@ -3,6 +3,8 @@ import { computePositions } from './positions';
 import { fmtMonths, recovery, simulateAporte, yocHistory, yocSummary } from './yoc';
 import { defaultSettings, makeAsset } from '../seed';
 import type { Transaction } from '../types';
+import { priceFmt, qtyFmt } from '../format';
+import { parseNum } from '../util';
 
 const S = defaultSettings();
 const AS = '2026-10-31';
@@ -69,5 +71,22 @@ describe('Compensação de queda por proventos', () => {
     const re = recovery({ exposed: 10000, dropPct: 20, annualIncome: 800, reinvest: true }).months!;
     expect(re).toBeLessThan(base);
     expect(recovery({ exposed: 10000, dropPct: 20, annualIncome: 0 }).months).toBeNull();
+  });
+});
+
+describe('Criptoativos: 8 casas decimais', () => {
+  it('exibe e lê as quantidades sem perder casas', () => {
+    expect(qtyFmt(0.00045667, 'cripto')).toBe('0,00045667');
+    expect(qtyFmt(42.612885, 'cripto')).toBe('42,61288500');
+    expect(qtyFmt(100)).toBe('100');
+    expect(parseNum('0,00045667')).toBe(0.00045667);
+    expect(parseNum('42,61288500')).toBe(42.612885);
+    expect(priceFmt(5.4213, 'cripto').replace(/\s/g, ' ')).toBe('R$ 5,4213');
+  });
+  it('custo e posição em decimal exato', () => {
+    const a = makeAsset({ ticker: 'BTC', class: 'cripto' });
+    const pos = computePositions([a], [{ id: 'b', date: '2026-01-02', type: 'compra', assetId: a.id, ticker: 'BTC', qty: 0.00045667, price: 600000, amount: 274.002 }], AS);
+    expect(pos[a.id].qty).toBe(0.00045667);
+    expect(qtyFmt(pos[a.id].qty, 'cripto')).toBe('0,00045667');
   });
 });

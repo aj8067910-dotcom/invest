@@ -154,6 +154,16 @@ Limitações: bancos e seguradoras não têm margem, Dív./EBITDA e FCL (não se
 
 Recebido e projetado nunca se misturam: o recebido vem só de lançamentos com data de pagamento até hoje; provisionado e projeção aparecem separados e marcados como PROJEÇÃO.
 
+## Criptoativos com 8 casas decimais
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Quantidades (Carteira, ficha, Planilha, Histórico por ativo, lançamento, aportes, YoC) | Até 8 casas, sem zeros à direita (42,612885) | Criptoativos sempre com 8 casas: 0,00045667 BTC e 42,61288500 USDC | 1 satoshi = 0,00000001 BTC |
+| Preço unitário e preço médio de cripto | 2 casas | Até 8 casas (ex.: USDC R$ 5,4213); totais continuam em centavos | |
+| Campos numéricos | Valor salvo aparecia com ponto ou em notação científica (1e-7) | Vírgula decimal, sem notação científica | |
+
+Armazenamento e cálculo já usavam a quantidade exata (decimal); a mudança é de exibição e digitação.
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

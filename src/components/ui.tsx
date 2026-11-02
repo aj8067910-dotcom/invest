@@ -75,11 +75,14 @@ export function DataTag({ kind, date, source }: { kind: 'real' | 'manual' | 'est
   );
 }
 
+/** Número para edição: vírgula decimal, sem separador de milhar e sem notação científica (0,00045667, não 4.5667e-4). */
+const numText = (v: number) => v.toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: 12 });
+
 export function NumInput({ value, onChange, step = 'any', placeholder = '—', suffix, className = '', min, disabled }: { value: number | null | undefined; onChange: (v: number | null) => void; step?: string; placeholder?: string; suffix?: string; className?: string; min?: number; disabled?: boolean }) {
-  const [txt, setTxt] = useState(value === null || value === undefined ? '' : String(value));
+  const [txt, setTxt] = useState(value === null || value === undefined ? '' : numText(value));
   useEffect(() => {
     const cur = parseNum(txt);
-    if (cur !== (value ?? null)) setTxt(value === null || value === undefined ? '' : String(value));
+    if (cur !== (value ?? null)) setTxt(value === null || value === undefined ? '' : numText(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   return (
