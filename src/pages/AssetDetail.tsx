@@ -782,19 +782,33 @@ function EventsTab({ a }: { a: Asset }) {
 function RegistryTab({ a }: { a: Asset }) {
   const update = useStore((s) => s.updateAsset);
   const remove = useStore((s) => s.removeAsset);
+  const txCount = useStore((s) => s.transactions.filter((t) => t.assetId === a.id || t.targetAssetId === a.id).length);
   const nav = useNavigate();
   const [confirmDel, setConfirmDel] = useState(false);
+  const to = a.status === 'carteira' ? 'watchlist' : 'carteira';
   return (
-    <Card title="Cadastro do ativo" sub={`Criado em ${dateBR(a.createdAt)} · atualizado em ${dateTimeBR(a.updatedAt)} · ${CLASS_LABEL[a.class]}`}>
-      <AssetForm initial={a} onSave={(x) => { update(a.id, x); toast('Cadastro salvo.'); }} />
+    <Card title="Cadastro do ativo" sub={`Criado em ${dateBR(a.createdAt)} · atualizado em ${dateTimeBR(a.updatedAt)} · ${CLASS_LABEL[a.class]} · ${a.status === 'carteira' ? 'na carteira' : 'na watchlist'}`}>
+      <AssetForm key={a.status} initial={a} onSave={(x) => { update(a.id, x); toast('Cadastro salvo.'); }} />
       <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '18px 0' }} />
-      <button className="btn danger sm" onClick={() => setConfirmDel(true)}>Excluir ativo</button>
-      <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title={`Excluir ${a.ticker}?`}>
-        <p>O ativo e todas as suas operações no histórico serão removidos. Considere mover para a watchlist em vez de excluir.</p>
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn ghost" onClick={() => setConfirmDel(false)}>Cancelar</button>
-          <button className="btn danger" onClick={() => { remove(a.id); nav('/carteira'); }}>Excluir definitivamente</button>
-        </div>
+      <div className="row">
+        <button className="btn sm" onClick={() => { update(a.id, { status: to }); toast(`${a.ticker} movido para a ${to}.`); }}>Mover para a {to}</button>
+        <button className="btn danger sm" onClick={() => setConfirmDel(true)}>Remover ativo</button>
+      </div>
+      <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title={`Remover ${a.ticker}?`}>
+        {txCount ? (
+          <>
+            <p>{a.ticker} tem {txCount} lançamento(s) no histórico. O livro de lançamentos não apaga registros, por isso o ativo não pode ser removido. Mova para a watchlist ou estorne os lançamentos na Central de Operações.</p>
+            <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn" onClick={() => setConfirmDel(false)}>Entendi</button></div>
+          </>
+        ) : (
+          <>
+            <p>O ativo sai da {a.status === 'carteira' ? 'carteira' : 'watchlist'}. Não há lançamentos dele no histórico.</p>
+            <div className="row" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn ghost" onClick={() => setConfirmDel(false)}>Cancelar</button>
+              <button className="btn danger" onClick={() => { remove(a.id); toast(`${a.ticker} removido.`); nav('/carteira'); }}>Remover</button>
+            </div>
+          </>
+        )}
       </Modal>
     </Card>
   );

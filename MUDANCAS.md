@@ -133,6 +133,15 @@ Regras: com a carteira em formação (patrimônio menor que 10 aportes mensais) 
 
 Limitações: bancos e seguradoras não têm margem, Dív./EBITDA e FCL (não se aplicam); a dívida não inclui arrendamentos (IFRS 16); dados anuais (DFP), sem os últimos 12 meses trimestrais.
 
+## Watchlist: adicionar, remover, mover e regra de aporte
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Carteira & Watchlist | Ícones ⇄ e ✕ sem rótulo; um único "Adicionar ativo" | Botões "+ Adicionar à watchlist", "+ Adicionar à carteira", "→ Carteira", "→ Watchlist" e "Remover"; o mesmo na aba Cadastro da ficha | |
+| Remover ativo | Apagava o ativo **e todas as operações** do histórico | Só remove ativo sem lançamentos; com histórico, orienta mover para a watchlist ou estornar | Livro só de inclusão (Etapa 1) |
+| Mover com posição | Sem aviso | Pede confirmação: a posição continua no patrimônio e no histórico; só a lista muda | |
+| Central de aportes | Watchlist entrava também em Manutenção | Watchlist só entra na lista de compras em **Oportunidade** (classificação e faixa da régua); fora disso aparece em "fora do aporte" com o motivo | Pedido do investidor |
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

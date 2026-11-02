@@ -149,13 +149,9 @@ export const useStore = create<State>()(
 
       addAsset: (a) => set((s) => ({ assets: [...s.assets, a] })),
       updateAsset: (id, patch) => set((s) => ({ assets: s.assets.map((a) => (a.id === id ? touch({ ...a, ...patch }) : a)) })),
+      // Livro só de inclusão: um ativo com lançamentos não é apagado (use "mover para watchlist").
       removeAsset: (id) =>
-        set((s) => {
-          const gone = s.transactions.filter((t) => t.assetId === id);
-          let audit = s.audit;
-          for (const t of gone) audit = addAudit(audit, { action: 'excluir', txId: t.id, summary: `Excluído com o ativo: ${describe(t, s.assets)}`, before: t });
-          return { assets: s.assets.filter((a) => a.id !== id), transactions: s.transactions.filter((t) => t.assetId !== id), audit };
-        }),
+        set((s) => (s.transactions.some((t) => t.assetId === id || t.targetAssetId === id) ? s : { assets: s.assets.filter((a) => a.id !== id) })),
       saveFundamentals: (id, f) =>
         set((s) => ({
           assets: s.assets.map((a) => {

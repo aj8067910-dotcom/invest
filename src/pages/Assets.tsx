@@ -33,7 +33,22 @@ export default function Assets() {
   const [cls, setCls] = useState<AssetClass | 'todas'>('todas');
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'value', dir: -1 });
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<AssetStatus | null>(null);
+  const move = (a: Asset) => {
+    const to: AssetStatus = a.status === 'carteira' ? 'watchlist' : 'carteira';
+    const p = d.positions[a.id];
+    if (to === 'watchlist' && isHeld(p) && !confirm(`${a.ticker} ainda tem posição (${qtyFmt(p.qty)}). Ela continua no patrimônio e no histórico; só a lista muda. Mover para a watchlist?`)) return;
+    updateAsset(a.id, { status: to });
+    toast(`${a.ticker} movido para a ${to === 'carteira' ? 'carteira' : 'watchlist'}.`);
+  };
+  const remove = (a: Asset) => {
+    const n = d.allTransactions.filter((t) => t.assetId === a.id || t.targetAssetId === a.id).length;
+    if (n) return toast(`${a.ticker} tem ${n} lançamento(s) no histórico e não pode ser removido (o livro não apaga lançamentos). Use "Mover para watchlist" ou estorne os lançamentos na Central de Operações.`, true);
+    if (confirm(`Remover ${a.ticker} da ${a.status === 'carteira' ? 'carteira' : 'watchlist'}?`)) {
+      removeAsset(a.id);
+      toast(`${a.ticker} removido.`);
+    }
+  };
 
   const rows = useMemo(() => {
     const total = d.totals.marketValue || 1;
@@ -67,9 +82,12 @@ export default function Assets() {
         <div>
           <div className="kicker">Cadastro</div>
           <h1>Carteira & Watchlist</h1>
-          <p>Quantidade e preço médio vêm da Central de Operações. Clique no ticker para abrir a ficha completa (preço-teto, dividendos, fundamentos e valuation).</p>
+          <p>Quantidade e preço médio vêm da Central de Operações. Clique no ticker para abrir a ficha completa. A watchlist só entra na lista de compras da Central de aportes quando o ativo está em Oportunidade.</p>
         </div>
-        <button className="btn primary" onClick={() => setAdding(true)}>+ Adicionar ativo</button>
+        <div className="row">
+          <button className="btn" onClick={() => setAdding('watchlist')}>+ Adicionar à watchlist</button>
+          <button className="btn primary" onClick={() => setAdding('carteira')}>+ Adicionar à carteira</button>
+        </div>
       </div>
       <Card>
         <div className="filters">
@@ -141,26 +159,10 @@ export default function Assets() {
                     </span>
                   </td>
                   <td className="nowrap">
-                    <button
-                      className="btn ghost sm"
-                      title={a.status === 'carteira' ? 'Mover para watchlist' : 'Mover para carteira'}
-                      onClick={() => {
-                        updateAsset(a.id, { status: a.status === 'carteira' ? 'watchlist' : 'carteira' });
-                        toast(`${a.ticker} movido para ${a.status === 'carteira' ? 'watchlist' : 'carteira'}.`);
-                      }}
-                    >
-                      ⇄
+                    <button className="btn ghost sm" title={a.status === 'carteira' ? 'Mover para a watchlist' : 'Mover para a carteira'} onClick={() => move(a)}>
+                      {a.status === 'carteira' ? '→ Watchlist' : '→ Carteira'}
                     </button>
-                    <button
-                      className="btn ghost sm"
-                      title="Excluir"
-                      onClick={() => {
-                        const n = d.transactions.filter((t) => t.assetId === a.id).length;
-                        if (confirm(`Excluir ${a.ticker}?${n ? ` ${n} operação(ões) do histórico também serão removidas.` : ''}`)) removeAsset(a.id);
-                      }}
-                    >
-                      ✕
-                    </button>
+                    <button className="btn ghost sm" title="Remover da lista (só ativos sem lançamentos)" onClick={() => remove(a)}>Remover</button>
                   </td>
                 </tr>
               ))}
@@ -171,15 +173,17 @@ export default function Assets() {
           Margem = (Teto − Preço) ÷ Teto, só para ações e FIIs; ETFs, Tesouro e cripto são avaliados por alocação. Preço de interesse: o manual (com justificativa e data, no cadastro) ou o preço de oportunidade calculado. “mudou” indica alerta da análise 360° que mudou de cor nos últimos 30 dias. <BandBadge b={null} /> = sem cotação ou sem proventos.
         </p>
       </Card>
-      <Modal open={adding} onClose={() => setAdding(false)} title="Novo ativo" wide>
+      <Modal open={!!adding} onClose={() => setAdding(null)} title={adding === 'carteira' ? 'Novo ativo na carteira' : 'Novo ativo na watchlist'} wide>
         <AssetForm
+          key={adding || ''}
           isNew
-          initial={makeAsset({ ticker: '', class: 'acao', status: 'watchlist' })}
-          onCancel={() => setAdding(false)}
+          initial={makeAsset({ ticker: '', class: 'acao', status: adding || 'watchlist' })}
+          onCancel={() => setAdding(null)}
           onSave={(a) => {
             if (d.assets.some((x) => x.ticker === a.ticker)) return toast(`${a.ticker} já está cadastrado.`, true);
             addAsset({ ...a, issuer: a.issuer || a.ticker, name: a.name || a.ticker });
-            setAdding(false);
+            setAdding(null);
+            toast(`${a.ticker} adicionado à ${a.status === 'carteira' ? 'carteira' : 'watchlist'}.${a.status === 'carteira' ? ' Lance as compras na Central de Operações.' : ''}`);
             nav(`/ativo/${a.id}`);
           }}
         />
