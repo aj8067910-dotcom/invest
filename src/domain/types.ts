@@ -171,6 +171,7 @@ export interface Asset {
   events: CorporateEvent[];
   // ── carteira e alocação
   targetWeight?: number | null; // peso-alvo do ativo na carteira (%)
+  maxWeight?: number | null; // teto de participação do ativo na carteira (%); vazio = limite geral por ativo
   isReserve?: boolean; // reserva de emergência: fica fora da alocação
   exposure?: Exposure | null; // exposição econômica (pode diferir do veículo)
   // ── preço-teto

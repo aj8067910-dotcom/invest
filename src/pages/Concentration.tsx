@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useDerived } from '../store/derived';
 import { AlertList, Badge, Card, Disclaimer, Empty, Tabs } from '../components/ui';
 import { PALETTE } from '../components/common';
-import { DIMENSION_LABEL, exposure, overlaps, type Dimension } from '../domain/calc/concentration';
+import { capOf, DIMENSION_LABEL, exposure, overlaps, type Dimension } from '../domain/calc/concentration';
 import { brl, pct } from '../domain/format';
 
 const DIMS: Dimension[] = ['ativo', 'setor', 'emissor', 'classe', 'segmentoFii', 'tipoFii', 'internacional', 'moeda'];
@@ -26,7 +26,7 @@ export default function Concentration() {
         </div>
       </div>
       <Card title="Alertas de concentração">{d.concAlerts.length ? <AlertList alerts={d.concAlerts} /> : <Empty>{d.totals.marketValue ? 'Nenhum limite ultrapassado.' : 'Sem posições registradas.'}</Empty>}</Card>
-      <Card title="Exposição" right={lim ? <span className="muted" style={{ fontSize: 12 }}>limite {lim}%{dim === 'segmentoFii' ? ' dos FIIs' : ''}</span> : null}>
+      <Card title="Exposição" right={lim ? <span className="muted" style={{ fontSize: 12 }}>{dim === 'ativo' ? 'teto de cada ativo (Parâmetros → Teto por ativo)' : `limite ${lim}%`}{dim === 'segmentoFii' ? ' dos FIIs' : ''}</span> : null}>
         <Tabs tabs={DIMS.map((k) => ({ key: k, label: DIMENSION_LABEL[k] }))} value={dim} onChange={setDim} />
         {rows.length ? (
           <div className="stack" style={{ gap: 8 }}>
@@ -36,7 +36,10 @@ export default function Concentration() {
             <table className="tbl">
               <thead><tr><th>{DIMENSION_LABEL[dim]}</th><th className="num">Valor</th><th className="num">Peso</th><th style={{ width: '30%' }}></th><th>Ativos</th></tr></thead>
               <tbody>
-                {rows.map((r, i) => (
+                {rows.map((r, i) => {
+                  const asset = dim === 'ativo' ? d.assets.find((x) => x.ticker === r.key) : undefined;
+                  const lim = asset ? capOf(asset, d.settings).pct : limitFor[dim];
+                  return (
                   <tr key={r.key}>
                     <td><span style={{ color: PALETTE[i % PALETTE.length] }}>■</span> {r.key}</td>
                     <td className="num">{brl(r.value)}</td>
@@ -47,9 +50,10 @@ export default function Concentration() {
                         {lim && <i style={{ position: 'absolute', left: `${lim}%`, top: -2, bottom: -2, width: 2, background: 'var(--warn)' }} />}
                       </div>
                     </td>
-                    <td className="mono" style={{ fontSize: 12 }}>{r.tickers.join(', ')}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{dim === 'ativo' && lim ? `teto ${pct(lim, 0)}` : r.tickers.join(', ')}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             {dim === 'setor' && <p className="muted" style={{ fontSize: 12 }}>O alerta de setor considera apenas ações e FIIs sobre o patrimônio total; ETFs, Tesouro e cripto aparecem como categorias próprias.</p>}

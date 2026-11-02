@@ -86,8 +86,10 @@ export function concentrationAlerts(assets: Asset[], positions: Record<string, P
 
   for (const r of exposure(assets, positions, 'ativo')) {
     const a = assets.find((x) => x.ticker === r.key);
-    if (a && (a.class === 'tesouro' || a.class === 'etf')) continue; // veículos diversificados
-    if (r.pct > L.maxAssetPct) out.push({ level: 'warn', code: 'ativo', message: `${r.key} representa ${r.pct.toFixed(1)}% da carteira (limite ${L.maxAssetPct}%).` });
+    if (!a) continue;
+    const cap = capOf(a, s);
+    if (!cap.own && (a.class === 'tesouro' || a.class === 'etf')) continue; // veículos diversificados
+    if (r.pct > cap.pct) out.push({ level: 'warn', code: 'ativo', message: `${r.key} representa ${r.pct.toFixed(1)}% da carteira (teto ${cap.own ? 'definido para o ativo' : 'geral por ativo'}: ${cap.pct}%).` });
   }
   const sectors = new Set(heldList.filter((a) => a.class === 'acao' || a.class === 'fii').map((a) => a.sector));
   for (const sec of sectors) {
@@ -175,6 +177,20 @@ export function overlaps(assets: Asset[], positions: Record<string, Position>): 
 }
 
 /** Peso atual (%) de um ativo, setor e emissor no patrimônio; usado no ranking e na central de aportes. */
+/** Teto de participação do ativo (%): o definido no ativo ou o limite geral por ativo (Parâmetros). */
+export function capOf(a: Asset, s: Settings): { pct: number; own: boolean } {
+  const own = typeof a.maxWeight === 'number' && isFinite(a.maxWeight) && a.maxWeight > 0;
+  return { pct: own ? (a.maxWeight as number) : s.limits.maxAssetPct, own };
+}
+
+/** Quanto ainda cabe (R$) até o teto, considerando que o próprio aporte aumenta o patrimônio. */
+export function roomToCap(capPct: number, assetValue: number, total: number): number {
+  const c = capPct / 100;
+  if (c >= 1) return Infinity;
+  // (v + x) / (T + x) = c  →  x = (cT − v) / (1 − c)
+  return Math.max(0, (c * total - assetValue) / (1 - c));
+}
+
 export function weights(assets: Asset[], positions: Record<string, Position>, a: Asset, addValue = 0) {
   let total = addValue;
   let asset = addValue;

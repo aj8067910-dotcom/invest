@@ -5,7 +5,7 @@ import { D, Decimal, N } from '../money';
 import { BAND_INFO } from './bazin';
 import type { ScoreContext, ScoreResult } from './scoring';
 import { PRIORITY_INFO } from './scoring';
-import { weights as weightsOf } from './concentration';
+import { capOf, weights as weightsOf } from './concentration';
 
 export interface AllocatorInput {
   amount: number;
@@ -59,7 +59,7 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
 
   if (investable <= 0) return { verdict: 'aguardar', investable, invested: 0, leftover: input.amount, lines: [], excluded, summary: ['Valor disponível não supera a reserva desejada.'] };
 
-  type Cand = { a: Asset; r: ScoreResult; adj: number; price: number; room: number; why: string[] };
+  type Cand = { a: Asset; r: ScoreResult; adj: number; price: number; room: number; hardCap: number; why: string[] };
   const cands: Cand[] = [];
   for (const r of ranking) {
     const a = byId.get(r.assetId);
@@ -98,6 +98,7 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
     }
     // limite de concentração por ativo
     let room = input.maxPerAsset;
+    let hardCap = Infinity; // teto de participação: o arredondamento para cima não pode passar dele
     // ETFs, Tesouro e cripto servem à alocação: no máximo o que falta para a classe chegar ao alvo
     if (!isBazinClass(a.class)) {
       const gap = Math.max(0, ((ctx.alloc.total + investable) * cls.target) / 100 - cls.value);
@@ -108,21 +109,27 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
       if (gap < room) why.push(`Limitado a R$ ${gap.toFixed(2)}: valor que falta para ${CLASS_LABEL[a.class]} atingir o alvo.`);
       room = Math.min(room, gap);
     }
-    if (!forming && a.class !== 'tesouro' && a.class !== 'etf') {
+    const cap = capOf(a, ctx.settings);
+    if (!forming && (cap.own || (a.class !== 'tesouro' && a.class !== 'etf'))) {
       const w = weightsOf(ctx.assets, ctx.positions, a);
-      const allowed = (ctx.settings.limits.maxAssetPct / 100) * (total + investable) - (w.assetPct / 100) * total;
-      if (allowed <= price) {
-        excluded.push({ asset: a, reason: `Já no limite de concentração (${w.assetPct.toFixed(1)}% vs ${ctx.settings.limits.maxAssetPct}%).` });
+      const allowed = (cap.pct / 100) * (total + investable) - (w.assetPct / 100) * total;
+      const capTxt = cap.own ? `teto de ${cap.pct}% definido para ${a.ticker}` : `teto geral de ${cap.pct}% por ativo`;
+      if (allowed < price * unitStep(a)) {
+        excluded.push({ asset: a, reason: `No teto de participação (${w.assetPct.toFixed(1)}% vs ${capTxt}).` });
         continue;
       }
-      if (allowed < room) why.push(`Valor limitado a R$ ${allowed.toFixed(2)} pelo teto de ${ctx.settings.limits.maxAssetPct}% por ativo.`);
+      if (allowed < room) why.push(`Valor limitado a R$ ${allowed.toFixed(2)} pelo ${capTxt}.`);
       room = Math.min(room, allowed);
+      hardCap = allowed;
+    }
+    if (!forming && a.class !== 'tesouro' && a.class !== 'etf') {
+      const w = weightsOf(ctx.assets, ctx.positions, a);
       if (w.sectorPct > ctx.settings.limits.maxSectorPct && isBazinClass(a.class)) {
         adj -= 10;
         why.push(`Setor ${a.sector} acima do limite (${w.sectorPct.toFixed(1)}%): peso reduzido.`);
       }
     }
-    cands.push({ a, r, adj, price, room, why });
+    cands.push({ a, r, adj, price, room, hardCap, why });
   }
 
   cands.sort((x, y) => y.adj - x.adj);
@@ -145,10 +152,16 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
   for (const c of chosen) {
     const share = mode === 'concentrar' ? Math.min(investable, c.room) : Math.min((investable * Math.max(1, c.adj)) / totalAdj, c.room);
     if (share <= 0) continue;
-    const qty = ceilStep(share, c.price, unitStep(c.a));
+    let qty = ceilStep(share, c.price, unitStep(c.a));
+    let rounding = 'para cima';
+    if (qty * c.price > c.hardCap) {
+      qty = N(D(c.hardCap).dividedBy(c.price).dividedBy(unitStep(c.a)).toDecimalPlaces(0, Decimal.ROUND_FLOOR).times(unitStep(c.a)));
+      rounding = 'para baixo (para não passar do teto de participação)';
+    }
+    if (qty <= 0) continue;
     const cost = N(D(qty).times(c.price));
     remaining -= cost;
-    lines.push({ asset: c.a, result: c.r, adjScore: c.adj, qty, price: c.price, cost, why: [...c.why, `Quantidade arredondada para cima: ${qty} × R$ ${c.price.toFixed(2)} = R$ ${cost.toFixed(2)}.`] });
+    lines.push({ asset: c.a, result: c.r, adjScore: c.adj, qty, price: c.price, cost, why: [...c.why, `Quantidade arredondada ${rounding}: ${qty} × R$ ${c.price.toFixed(2)} = R$ ${cost.toFixed(2)}.`] });
   }
 
   const invested = lines.reduce((s, l) => s + l.cost, 0);

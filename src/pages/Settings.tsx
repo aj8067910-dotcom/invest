@@ -3,6 +3,7 @@ import { Card, Disclaimer, Field, NumInput } from '../components/ui';
 import { defaultSettings } from '../domain/seed';
 import { CRITERION_LABEL, DPA_REF_LABEL, type Criterion, type DpaRef, type Settings } from '../domain/types';
 import { toast } from '../components/toast';
+import { CapTable } from '../components/CapTable';
 
 type Path<K extends keyof Settings> = [K, keyof Settings[K]];
 
@@ -104,6 +105,8 @@ export default function SettingsPage() {
           </div>
         </Card>
       </div>
+
+      <CapTable />
 
       <Card title="Regras tributárias" sub="Valores da sua especificação, com a base legal. Editáveis; confirme com um contador.">
         <div className="form-grid">

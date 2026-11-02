@@ -105,6 +105,17 @@ Fundamento: Piotroski (2000), Altman (2005, Z″ EM), Graham, Bazin, normas CVM;
 | Interface | Fonte do sistema, só tema escuro | Inter; tema claro, escuro ou automático; selos de fonte e "por quê?" nos números | P13 |
 | Exportação | JSON | JSON e CSV, incluindo conciliações | |
 
+## Teto de participação por ativo (pedido posterior)
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Cadastro do ativo e Parâmetros → **Teto por ativo** | Só um limite geral por ativo (12%) | Cada ativo pode ter seu teto (ex.: BBSE3 8%). Vazio = limite geral. Tabela em Parâmetros com peso atual, teto, quanto ainda cabe (R$) e situação | Diversificação reduz o risco específico (Markowitz, 1952) |
+| Ranking | — | No teto ou acima → **Aguardar**, com o motivo | Etapa 8 (peso acima do alvo rebaixa) |
+| Central de aportes | Limite geral | Valor limitado ao que cabe até o teto; nesse caso a quantidade é arredondada para baixo para não passar do teto | |
+| Carteira e Concentração | — | Peso mostra o teto ao lado; alerta usa o teto de cada ativo | |
+
+Regras: com a carteira em formação (patrimônio menor que 10 aportes mensais) os tetos não bloqueiam compras, como já acontecia com o limite geral. ETFs e Tesouro sem teto próprio seguem só a alocação da classe.
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

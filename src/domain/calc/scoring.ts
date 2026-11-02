@@ -5,7 +5,7 @@ import { computeBazin, type BazinResult, BAND_INFO } from './bazin';
 import { annualHistory, consecutiveYears, dividendCagr, dividendDrop, ttmPerUnit } from './dividends';
 import type { Position } from './positions';
 import { classNeedScore, type AllocationResult } from './allocation';
-import { weights as weightsOf } from './concentration';
+import { capOf, weights as weightsOf } from './concentration';
 import { thesisAlerts, type Alert } from './thesis';
 import { daysBetween } from '../util';
 import { analyze, type Analysis } from './analysis360';
@@ -263,6 +263,15 @@ export function scoreAsset(a: Asset, ctx: ScoreContext): ScoreResult {
   if (a.riskLevel >= 5 && priority !== 'aguardar') {
     priority = 'aguardar';
     reasons.push('Risco classificado por você como muito alto (5/5).');
+  }
+  // teto de participação: atingido → não comprar mais (a decisão continua sua)
+  const cap = capOf(a, s);
+  if (priority !== 'aguardar' && ctx.alloc.total > s.profile.monthlyContribution * 10 && (cap.own || (a.class !== 'tesouro' && a.class !== 'etf'))) {
+    const w = weightsOf(ctx.assets, ctx.positions, a);
+    if (w.total > 0 && w.assetPct >= cap.pct) {
+      priority = 'aguardar';
+      reasons.push(`Teto de participação atingido: ${w.assetPct.toFixed(1).replace('.', ',')}% da carteira vs teto de ${cap.pct}%${cap.own ? ' definido para o ativo' : ' (limite geral por ativo)'}.`);
+    }
   }
   // peso-alvo e sobreposição econômica
   const target = isNum(a.targetWeight) ? a.targetWeight : s.limits.maxAssetPct;

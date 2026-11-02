@@ -127,6 +127,9 @@ export function AssetForm({ initial, onSave, onCancel, isNew }: { initial: Asset
         <Field label="Peso-alvo na carteira" hint="Vazio = limite máximo por ativo (Parâmetros)">
           <NumInput value={a.targetWeight ?? null} suffix="%" onChange={(v) => up({ targetWeight: v })} />
         </Field>
+        <Field label="Teto na carteira" hint="Participação máxima deste ativo. Vazio = máximo geral por ativo (Parâmetros)">
+          <NumInput value={a.maxWeight ?? null} suffix="%" onChange={(v) => up({ maxWeight: v && v > 0 ? Math.min(100, v) : null })} />
+        </Field>
         <Field label="Exposição econômica" hint="Ex.: BOVX11 = ações Brasil">
           <select value={a.exposure || ''} onChange={(e) => up({ exposure: (e.target.value || null) as Exposure | null })}>
             <option value="">automática</option>

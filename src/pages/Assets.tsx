@@ -12,6 +12,7 @@ import type { AssetClass, AssetStatus } from '../domain/types';
 import { CLASS_LABEL, CLASS_ORDER } from '../domain/types';
 import { toast } from '../components/toast';
 import { isHeld } from '../domain/calc/positions';
+import { capOf } from '../domain/calc/concentration';
 import { Badge } from '../components/ui';
 import type { Asset } from '../domain/types';
 
@@ -116,7 +117,10 @@ export default function Assets() {
                   <td className="num">{p.qty > 0 ? brl(p.avgPrice) : '—'}</td>
                   <td><QuoteCell a={a} /></td>
                   <td className="num">{value ? brl(value) : '—'}</td>
-                  <td className="num">{weight ? pct(weight) : '—'}</td>
+                  <td className="num" title={capOf(a, d.settings).own ? 'Teto definido para o ativo' : 'Teto geral por ativo (Parâmetros)'}>
+                    <span className={weight && weight >= capOf(a, d.settings).pct && (capOf(a, d.settings).own || (a.class !== 'etf' && a.class !== 'tesouro')) ? 'neg' : ''}>{weight ? pct(weight) : '—'}</span>
+                    {(capOf(a, d.settings).own || (a.class !== 'etf' && a.class !== 'tesouro')) && <div className="dim" style={{ fontSize: 11 }}>teto {pct(capOf(a, d.settings).pct, 0)}{capOf(a, d.settings).own ? '' : '*'}</div>}
+                  </td>
                   <td className="num">{r.bazin.applicable ? pct(r.bazin.dyCurrent, 2) : <span className="dim">n/a</span>}</td>
                   <td>
                     {r.bazin.applicable ? (
