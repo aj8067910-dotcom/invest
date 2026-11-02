@@ -8,6 +8,7 @@ import { CLASS_LABEL, CLASS_ORDER, type AssetClass } from '../domain/types';
 import { brl, pct, qtyFmt, signedPct } from '../domain/format';
 import { todayISO } from '../domain/util';
 import { toast } from '../components/toast';
+import { IncomeTools } from '../components/IncomeTools';
 
 export default function Contribution() {
   const d = useDerived();
@@ -183,6 +184,7 @@ export default function Contribution() {
           <button className="btn primary" onClick={register}>Registrar</button>
         </div>
       </Modal>
+      <IncomeTools suggestedId={plan.lines[0]?.asset.id} />
       <Disclaimer />
     </div>
   );

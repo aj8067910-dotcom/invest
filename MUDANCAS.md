@@ -142,6 +142,18 @@ Limitações: bancos e seguradoras não têm margem, Dív./EBITDA e FCL (não se
 | Mover com posição | Sem aviso | Pede confirmação: a posição continua no patrimônio e no histórico; só a lista muda | |
 | Central de aportes | Watchlist entrava também em Manutenção | Watchlist só entra na lista de compras em **Oportunidade** (classificação e faixa da régua); fora disso aparece em "fora do aporte" com o motivo | Pedido do investidor |
 
+## Yield on Cost, projeção de renda do aporte e compensação de quedas
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Dividendos → **Yield on Cost** | Só um número no Painel (recebido 12m ÷ custo) | Painel com DY de mercado, YoC da carteira e dos ativos pagadores, total recebido, média mensal (12m e desde o início), projeção anual; tabela por ativo (custo, valor de mercado, DY, YoC, projeção, recebido total e 12m, YoC realizado 12m, 1ª compra); gráfico da evolução do YoC realizado por período (12m, 24m, 5 anos, tudo) e por ativo | YoC = proventos anuais projetados ÷ custo de aquisição (PM da Receita, IN RFB 1.585/2015 art. 58) |
+| Projeção de renda (Painel, Dividendos, aportes) | Base bruta dos últimos 12 meses | Mesma base do preço-teto: DPA de referência **líquido**, só recorrentes | Fonte única da verdade |
+| Central de aportes → **Projeção de renda do aporte** | — | Ativo + valor ou quantidade → quantidade, investimento, DY usado (editável; padrão = histórico), renda anual, média mensal equivalente, valor por pagamento e meses em que costuma pagar, impacto na renda da carteira, YoC do ativo e da carteira antes → depois | Aviso explícito quando o ativo não paga todo mês |
+| Central de aportes → **Proteção patrimonial** | — | Quedas de 5, 10, 15, 20% e manual; patrimônio exposto, perda, proventos anuais e mensais, tempo de compensação = perda ÷ proventos mensais (meses e anos). A: só o ativo; B: carteira (ações, FIIs, ETFs, cripto; sem Tesouro e reserva). Reinvestimento e aportes só se ligados | Equivalência financeira, não recuperação de cotação (dito na tela) |
+| Proventos automáticos históricos | Itens antigos (Yahoo) sem data de pagamento ficavam **provisionados para sempre** e não contavam como recebidos | Com data-com há mais de 60 dias: recebidos, data de pagamento estimada (FII +15 dias, ações +30), confiabilidade "estimada"; lançamentos existentes estornados e relançados com motivo | Lei 6.404/1976, art. 205 §3º |
+
+Recebido e projetado nunca se misturam: o recebido vem só de lançamentos com data de pagamento até hoje; provisionado e projeção aparecem separados e marcados como PROJEÇÃO.
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

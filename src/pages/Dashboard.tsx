@@ -91,7 +91,7 @@ export default function Dashboard() {
           tone={R.twr !== null && R.twr < 0 ? 'neg' : 'pos'}
           seal={{ source: 'Livro + fechamentos mensais (B3/Yahoo) + CDI (BCB)', at: robotAt }}
         />
-        <Stat label="DY da carteira (12m)" value={pct(d.dyPortfolio, 2)} sub={<>proventos líquidos recebidos ÷ patrimônio · Yield on Cost {pct(d.yieldOnCost, 2)}</>} tone="pos" seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
+        <Stat label="DY da carteira (12m)" value={pct(d.dyPortfolio, 2)} sub={<>recebidos ÷ patrimônio · <Link to="/dividendos">Yield on Cost {pct(d.yieldOnCost, 2)}</Link> (projetado ÷ custo)</>} tone="pos" seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
         <Stat label="Média mensal de proventos" value={brl(d.income.avgMonthly12m)} sub={`últimos 12 meses ÷ 12 · provisionado ${brl(d.income.provisioned)}`} tone="pos" seal={{ source: 'Livro (data de pagamento)', at: ledgerAt }} />
         <Stat label="Crescimento da renda" value={d.income.growthPct === null ? '—' : signedPct(d.income.growthPct)} sub={d.income.growthLabel} tone={d.income.growthPct !== null && d.income.growthPct > 0 ? 'pos' : d.income.growthPct !== null ? 'neg' : undefined} seal={{ source: 'Livro (data de pagamento)', at: ledgerAt }} />
         <Stat label="Renda estimada (12m à frente)" value={brl(d.forward.monthly)} sub={`por mês · qtd atual × DPA de referência líquido`} tone="warn" tag={<DataTag kind="estimativa" />} seal={{ source: 'Proventos B3/CVM + livro', at: robotAt }} />

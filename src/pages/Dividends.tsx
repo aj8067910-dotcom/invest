@@ -8,6 +8,7 @@ import { AssetLink, ChartTip, PALETTE } from '../components/common';
 import { brl, brlShort, dateBR, monthBR, num, pct, qtyFmt, signedPct } from '../domain/format';
 import { annualHistory, avgDy, dividendCagr, monthlyReceived, paymentFrequency, portfolioAnnualProForma, ttmPerUnit } from '../domain/calc/dividends';
 import { isBazinClass, TX_LABEL } from '../domain/types';
+import { YocPanel } from '../components/YocPanel';
 
 export default function Dividends() {
   const d = useDerived();
@@ -57,6 +58,7 @@ export default function Dividends() {
         <Stat label="Provisionado" value={brl(inc.provisioned)} sub="data-com passada, pagamento futuro" tone="warn" />
         <Stat label="Renda estimada anual" value={brl(d.forward.annual)} tag={<DataTag kind="estimativa" />} sub={`total já recebido ${brl(inc.totalReceived)}`} />
       </div>
+      <YocPanel />
 
       <div className="grid g2">
         <Card title="Proventos recebidos por mês" sub={<>Por tipo, desde o início da carteira <DataTag kind="real" /></>}>

@@ -58,7 +58,7 @@ export function ChartTip({ active, payload, label, fmt = brl, labelFmt }: any) {
       <div className="muted" style={{ marginBottom: 4 }}>{labelFmt ? labelFmt(label) : label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey + p.name}>
-          <span style={{ color: p.color || p.fill }}>■</span> {p.name}: <b>{fmt(p.value)}</b>
+          <span style={{ color: p.color || p.fill }}>■</span> {p.name}: <b>{fmt(p.value, p.dataKey)}</b>
         </div>
       ))}
     </div>

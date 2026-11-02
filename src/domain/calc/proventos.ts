@@ -54,6 +54,19 @@ interface Computed {
   net: Decimal;
   rule: string;
   key: string;
+  estPay: string | null; // data de pagamento estimada (fonte histórica sem data de pagamento)
+}
+
+/**
+ * Histórico antigo (Yahoo) não traz a data de pagamento. Com a data-com há mais de 60 dias, o provento
+ * já foi pago: a Lei 6.404/1976, art. 205 §3º, manda pagar em até 60 dias da declaração e sempre dentro
+ * do exercício social. Data estimada: data-com + 15 dias (FII) ou + 30 dias (ações). Confiabilidade "estimada".
+ * Itens da B3 sem data de pagamento ("a definir") continuam provisionados.
+ */
+export function estimatedPayDate(a: Asset, it: CalendarItem, asOf: string): string | null {
+  if (it.payDate || !it.source.startsWith('Yahoo')) return null;
+  if (addDays(it.dataCom, 60) > asOf) return null;
+  return addDays(it.dataCom, a.class === 'fii' ? 15 : 30);
 }
 
 const same = (a: number, b: number) => Math.abs(a - b) <= 0.005;
@@ -84,7 +97,7 @@ export function planAutoProventos(assets: Asset[], txs: Transaction[], calendar:
       const gross = cents(eligible.times(D(it.perUnit)));
       const tx = provTax(it.type, gross, s.tax, { fiiExempt: a.fiiTaxExempt });
       const ir = cents(tx.ir); // dinheiro efetivamente retido: centavos
-      computed.push({ asset: a, item: it, eligible, gross, ir, net: gross.minus(ir), rule: tx.rule, key: autoKey(a.ticker, it.type, it.dataCom, it.payDate) });
+      computed.push({ asset: a, item: it, eligible, gross, ir, net: gross.minus(ir), rule: tx.rule, key: autoKey(a.ticker, it.type, it.dataCom, it.payDate), estPay: estimatedPayDate(a, it, asOf) });
     }
   }
 
@@ -123,15 +136,16 @@ export function planAutoProventos(assets: Asset[], txs: Transaction[], calendar:
       continue;
     }
     const prev = byKey.get(c.key);
-    if (prev && same(prev.amount, net) && same(prev.qty ?? 0, N(c.eligible)) && same(prev.perUnit ?? 0, c.item.perUnit)) continue;
-    if (prev) plan.reverse.push({ id: prev.id, reason: 'Recálculo: posição elegível ou valor do aviso mudou.' });
+    const payDate = c.item.payDate || c.estPay || null;
+    if (prev && same(prev.amount, net) && same(prev.qty ?? 0, N(c.eligible)) && same(prev.perUnit ?? 0, c.item.perUnit) && (prev.payDate || null) === payDate) continue;
+    if (prev) plan.reverse.push({ id: prev.id, reason: (prev.payDate || null) !== payDate && same(prev.amount, net) ? 'Data de pagamento estimada para provento histórico (fonte sem data de pagamento).' : 'Recálculo: posição elegível ou valor do aviso mudou.' });
     // retificação: mesmo ativo, tipo e data-com, mas outra data de pagamento
     const rect = autos.find((t) => t.assetId === c.asset.id && t.type === c.item.type && t.exDate === c.item.dataCom && t.autoKey !== c.key);
     if (rect && !plan.reverse.some((r) => r.id === rect.id)) plan.reverse.push({ id: rect.id, reason: 'Aviso retificado pela companhia (data de pagamento ou valor).' });
     const now = new Date().toISOString();
     plan.create.push({
       id: cryptoId(),
-      date: c.item.payDate || c.item.dataCom,
+      date: payDate || c.item.dataCom,
       type: c.item.type,
       category: 'proventos',
       assetId: c.asset.id,
@@ -139,7 +153,7 @@ export function planAutoProventos(assets: Asset[], txs: Transaction[], calendar:
       qty: N(c.eligible),
       perUnit: c.item.perUnit,
       exDate: c.item.dataCom,
-      payDate: c.item.payDate || null,
+      payDate,
       gross: N(c.gross),
       ir: N(c.ir),
       amount: net,
@@ -147,7 +161,7 @@ export function planAutoProventos(assets: Asset[], txs: Transaction[], calendar:
       autoKey: c.key,
       source: 'automatico',
       reliability: c.item.dataCom < B3_HISTORY_START || c.item.source.startsWith('Yahoo') ? 'estimada' : 'confirmada',
-      notes: `Automático: ${N(c.eligible)} × R$ ${c.item.perUnit} (data-com ${br(c.item.dataCom)}). ${c.rule} Fonte: ${c.item.source}, coletado em ${br(c.item.collectedAt.slice(0, 10))}.`,
+      notes: `Automático: ${N(c.eligible)} × R$ ${c.item.perUnit} (data-com ${br(c.item.dataCom)}). ${c.rule} Fonte: ${c.item.source}, coletado em ${br(c.item.collectedAt.slice(0, 10))}.${c.estPay ? ` Data de pagamento ESTIMADA (${br(c.estPay)}): a fonte não informa; considerado recebido (Lei 6.404/1976, art. 205 §3º).` : ''}`,
       by: deviceName,
       createdAt: now,
       updatedAt: now,
