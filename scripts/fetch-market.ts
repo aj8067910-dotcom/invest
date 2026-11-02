@@ -301,7 +301,8 @@ for (const [k, s] of Object.entries({ cdi: 4391, ipca: 433 })) {
 
 // ───────── 7) CVM: DFP (5 anos) — renovado semanalmente ─────────
 const fundAge = prev.companiesCollectedAt ? (Date.now() - new Date(prev.companiesCollectedAt).getTime()) / 86400000 : 999;
-if (fundAge < 7 && prev.companies && Object.keys(prev.companies).length) {
+const FUND_SCHEMA = 4; // muda quando o mapeamento das contas muda → força nova coleta
+if (fundAge < 7 && prev.companiesSchema === FUND_SCHEMA && prev.companies && Object.keys(prev.companies).length) {
   out.companies = prev.companies;
   out.companiesCollectedAt = prev.companiesCollectedAt;
 } else {
@@ -329,8 +330,9 @@ if (fundAge < 7 && prev.companies && Object.keys(prev.companies).length) {
       const cnpjToCvm = new Map<string, string>();
       for (const row of parseCsv(files[`dfp_cia_aberta_${y}.csv`])) cnpjToCvm.set(row.CNPJ_CIA, String(Number(row.CD_CVM)));
       const rows = [...pick('BPA'), ...pick('BPP'), ...pick('DRE'), ...pick('DFC_MI'), ...pick('DFC_MD')].filter((r) => wanted.has(String(Number(r.CD_CVM))) && r.ORDEM_EXERC === 'ÚLTIMO');
-      // prefere consolidado; usa individual só se a empresa não tiver consolidado
-      const hasCon = new Set(rows.filter((r) => !r.__ind).map((r) => r.CD_CVM));
+      // prefere consolidado; usa individual se a empresa não tiver consolidado OU se o consolidado vier zerado
+      // (ex.: TIM S.A. sem controladas publica o consolidado com todas as contas em 0)
+      const hasCon = new Set(rows.filter((r) => !r.__ind && r.CD_CONTA === '1' && Number(r.VL_CONTA) > 0).map((r) => r.CD_CVM));
       const use = rows.filter((r) => !r.__ind || !hasCon.has(r.CD_CVM));
       for (const r of use) {
         const t = wanted.get(String(Number(r.CD_CVM)))!;
@@ -347,17 +349,24 @@ if (fundAge < 7 && prev.companies && Object.keys(prev.companies).length) {
         else if (cd === '2.02') Y.nonCurrentLiabilities = v;
         else if (/^2\.0\d$/.test(cd) && /patrim.nio l.quido/.test(ds)) Y.equity = v;
         else if (/^2\.0\d\.04$/.test(cd) && /reservas de lucro/.test(ds)) Y.retainedEarnings = v;
-        else if (cd === '2.01.04') Y.shortDebt = v;
-        else if (cd === '2.02.01') Y.longDebt = v;
+        // dívida bancária: só quando a conta é de fato empréstimos/financiamentos/debêntures
+        // (no plano de seguradoras e holdings a 2.02.01 é "Passivo Exigível a Longo Prazo")
+        else if (cd === '2.01.04') Y.shortDebt = /empr.stimo|financiamento|deb.nture/.test(ds) ? v : 0;
+        else if (cd === '2.02.01') Y.longDebt = /empr.stimo|financiamento|deb.nture/.test(ds) ? v : 0;
         else if (cd === '3.01') Y.revenue = v;
         else if (cd === '3.03') Y.grossProfit = v;
         else if (cd === '3.05') Y.ebit = v;
         else if (cd === '3.06.02') Y.financialExpense = Math.abs(v);
-        else if (cd === '3.11') Y.netIncome = v;
+        // lucro líquido: a conta muda de número conforme o plano (3.11 indústria; 3.09 Itaú; 3.11 Bradesco).
+        // Prefere a parcela atribuída aos sócios da controladora (base do LPA e do payout).
+        else if (/^3\.\d\d$/.test(cd) && /lucro.*per.odo/.test(ds) && !/antes|opera..es continuadas/.test(ds)) { if (v !== 0) (Y as any).__niTotal = v; }
+        else if (/^3\.\d\d\.01$/.test(cd) && /controladora/.test(ds)) { if (v !== 0) (Y as any).__niCtrl = v; }
+        // LPA básico informado (R$/ação, sem escala): usado para conferir a escala da quantidade de ações
+        else if (/^3\.99\.01\.0\d$/.test(cd) && Number(r.VL_CONTA) !== 0 && !(Y as any).__lpa) (Y as any).__lpa = Number(r.VL_CONTA);
         else if (cd === '6.01') Y.fco = v;
         else if (cd.startsWith('6.01.01') && /deprecia|amortiza|exaust/.test(ds)) Y.depreciation = (Y.depreciation ?? 0) + Math.abs(v);
         else if (cd.startsWith('6.02') && v < 0 && /imobilizad|intang/.test(ds)) Y.capex = (Y.capex ?? 0) + Math.abs(v);
-        else if (cd.startsWith('6.03') && v < 0 && /dividend|juros sobre (o )?capital/.test(ds)) Y.dividendsPaid = (Y.dividendsPaid ?? 0) + Math.abs(v);
+        else if (cd.startsWith('6.03') && v < 0 && /dividend|juros sobre (o )?capital|remunera..o aos acionistas/.test(ds)) Y.dividendsPaid = (Y.dividendsPaid ?? 0) + Math.abs(v);
       }
       const comp = files[`dfp_cia_aberta_composicao_capital_${y}.csv`];
       if (comp) for (const row of parseCsv(comp)) {
@@ -372,6 +381,20 @@ if (fundAge < 7 && prev.companies && Object.keys(prev.companies).length) {
     } catch (e: any) {
       err(`CVM DFP ${y}: ${e.message}`);
     }
+  }
+  for (const ys of Object.values(years)) for (const Y of Object.values(ys) as any[]) {
+    const ni = Y.__niCtrl ?? Y.__niTotal;
+    if (ni !== undefined) Y.netIncome = ni;
+    // a composição do capital vem ora em unidades, ora em milhares (sem coluna de escala):
+    // confere com lucro ÷ LPA informado na DRE; sem LPA, < 100 milhões de ações é tratado como milhares
+    if (Y.shares) {
+      const est = Y.__lpa && Y.netIncome ? Math.abs(Y.netIncome / Y.__lpa) : null;
+      const k = est ? (Math.abs(Math.log10((Y.shares * 1000) / est)) < Math.abs(Math.log10(Y.shares / est)) ? 1000 : 1) : Y.shares < 1e8 ? 1000 : 1;
+      Y.shares *= k;
+    }
+    delete Y.__niCtrl;
+    delete Y.__niTotal;
+    delete Y.__lpa;
   }
   for (const [t, ys] of Object.entries(years)) {
     out.companies[t] = {
@@ -388,6 +411,7 @@ if (fundAge < 7 && prev.companies && Object.keys(prev.companies).length) {
     } satisfies CompanyFin;
   }
   out.companiesCollectedAt = now;
+  out.companiesSchema = FUND_SCHEMA;
 }
 
 // ───────── 8) CVM: Informe Mensal Estruturado de FII ─────────

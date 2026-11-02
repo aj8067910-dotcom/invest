@@ -9,6 +9,7 @@ import { AlertList, Badge, Card, DataTag, Disclaimer, Empty, Field, Meter, Modal
 import { BandBadge, ChartTip, ClassBadge, PriorityBadge } from '../components/common';
 import { Ladder } from '../components/Ladder';
 import { AssetForm } from '../components/AssetForm';
+import { FUND_FORMULA, type FundKey } from '../domain/calc/cvmFundamentals';
 import { brl, dateBR, dateTimeBR, num, pct, qtyFmt, signedPct } from '../domain/format';
 import { BAND_INFO } from '../domain/calc/bazin';
 import { PRIORITY_INFO } from '../domain/calc/scoring';
@@ -324,7 +325,7 @@ function DividendsTab({ a }: { a: Asset }) {
       </div>
       <div className="grid g3">
         <Stat label={a.class === 'fii' ? 'Último rendimento por cota' : 'Último provento'} value={brl(lastPay?.value)} sub={lastPay ? `data-com ${dateBR(lastPay.exDate)}` : ''} />
-        <Stat label="Payout" value={a.class === 'fii' ? '≥95% (lei)' : pct(a.fundamentals.payout, 0)} sub={a.class === 'acao' && !isNum(a.fundamentals.payout) ? 'preencha em Fundamentos' : ''} />
+        <Stat label="Payout" value={a.class === 'fii' ? '≥95% (lei)' : pct(d.fund[a.id]?.asset.fundamentals.payout, 0)} sub={a.class !== 'acao' ? '' : d.fund[a.id]?.src.payout === 'cvm' ? `CVM — DFP ${d.fund[a.id].cvm?.year} (pagos no ano ÷ lucro)` : d.fund[a.id]?.src.payout === 'manual' ? 'manual' : 'sem dado na CVM: preencha em Fundamentos'} />
         <Stat label="Sustentabilidade" value={sustain?.score ?? '—'} sub={sustain?.note} tone={(sustain?.score ?? 0) >= 65 ? 'pos' : (sustain?.score ?? 100) < 40 ? 'neg' : 'warn'} />
       </div>
       <Card title="Histórico anual de proventos por unidade" sub="Barras: recorrente × extraordinário · linha: DY sobre preço médio do ano">
@@ -455,7 +456,7 @@ function DividendsTab({ a }: { a: Asset }) {
 const STOCK_FIELDS: [keyof Fundamentals, string, string?][] = [
   ['roe', 'ROE', '%'], ['roic', 'ROIC', '%'], ['netMargin', 'Margem líquida', '%'], ['ebitdaMargin', 'Margem EBITDA', '%'],
   ['pl', 'P/L', 'x'], ['pvp', 'P/VP', 'x'], ['evEbitda', 'EV/EBITDA', 'x'], ['netDebtEbitda', 'Dív. líq./EBITDA', 'x'],
-  ['payout', 'Payout', '%'], ['fcf', 'FCF 12m (R$ mi)'], ['fcfYield', 'FCF yield', '%'], ['revenueGrowth', 'Cresc. receita (CAGR 5a)', '%'],
+  ['payout', 'Payout', '%'], ['fcf', 'Fluxo de caixa livre (R$ mi)'], ['fcfYield', 'FCF yield', '%'], ['revenueGrowth', 'Cresc. receita (CAGR 5a)', '%'],
   ['earningsGrowth', 'Cresc. lucro (CAGR 5a)', '%'], ['lpa', 'LPA (R$)'], ['vpa', 'VPA (R$)'],
   ['governance', 'Governança (1–5)'], ['moat', 'Vantagem competitiva (1–5)'], ['sectorRisk', 'Risco setorial (1 baixo–5 alto)'],
 ];
@@ -473,8 +474,36 @@ function FundamentalsTab({ a }: { a: Asset }) {
   const fields = a.class === 'acao' ? STOCK_FIELDS : FII_FIELDS;
   const hist = [...(a.fundHistory || [])].reverse();
   const r = d.scoreById[a.id];
+  const fx = d.fund[a.id];
+  const cvmRows = (Object.keys(FUND_FORMULA) as FundKey[]).map((k) => ({ k, label: STOCK_FIELDS.find(([x]) => x === k)?.[1] || k, suf: STOCK_FIELDS.find(([x]) => x === k)?.[2], cvm: fx?.cvm?.values[k], manual: a.fundamentals[k] as number | null | undefined }));
   return (
     <div className="stack">
+      {a.class === 'acao' && (
+        <Card
+          title="Indicadores calculados da CVM (automático)"
+          sub={fx?.cvm ? <>Demonstrações anuais (DFP) de {fx.cvm.year} · {fx.cvm.source} · data-base {dateBR(fx.cvm.dataBase)}. Estes valores alimentam o ranking, os alertas e o preço-teto; o manual só entra quando a CVM não tem o dado.</> : 'A CVM não tem demonstrações desta empresa no robô (ou o ticker não está em market/tickers.json). Use os campos manuais abaixo.'}
+        >
+          {fx?.cvm && (
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>Indicador</th><th className="num">CVM</th><th className="num">Manual</th><th>Usado</th><th>Como é calculado</th></tr></thead>
+                <tbody>
+                  {cvmRows.map(({ k, label, suf, cvm, manual }) => (
+                    <tr key={k}>
+                      <td>{label}</td>
+                      <td className="num">{isNum(cvm) ? (suf === '%' ? pct(cvm, 1) : num(cvm, 2)) : <span className="dim">—</span>}</td>
+                      <td className="num">{isNum(manual) ? (suf === '%' ? pct(manual, 1) : num(manual, 2)) : <span className="dim">—</span>}</td>
+                      <td>{isNum(cvm) ? <Badge tone="good">CVM</Badge> : isNum(manual) ? <Badge tone="muted">manual</Badge> : <DataTag kind="ausente" />}</td>
+                      <td className="muted" style={{ fontSize: 12 }}>{FUND_FORMULA[k]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {fx.cvm.notes.map((n) => <p key={n} className="muted" style={{ fontSize: 12, marginBottom: 0 }}>{n}</p>)}
+            </div>
+          )}
+        </Card>
+      )}
       <Card
         title={a.class === 'acao' ? 'Indicadores manuais de reserva (usados quando a CVM não tem o dado)' : `Ficha do FII — ${a.fiiType ? FII_TYPE_LABEL[a.fiiType] : 'tipo não definido'} (dados de relatório gerencial)`}
         sub={<>Preenchimento manual a partir de fontes primárias (RI, CVM, relatório gerencial). Última revisão: {a.fundamentals.updatedAt ? dateBR(a.fundamentals.updatedAt) : 'nunca'} {a.fundamentals.updatedAt ? <DataTag kind="manual" date={a.fundamentals.updatedAt} source={a.fundamentals.source} /> : <DataTag kind="ausente" />}</>}
@@ -616,7 +645,7 @@ function ValuationTab({ a }: { a: Asset }) {
   const update = useStore((s) => s.updateAsset);
   const v = a.valuation || {};
   const set = (k: keyof ValuationInputs, val: number | null) => update(a.id, { valuation: { ...v, [k]: val } });
-  const lines = useMemo(() => valuations(a, d.settings), [a, d.settings]);
+  const lines = useMemo(() => valuations(d.fund[a.id]?.asset || a, d.settings), [a, d.fund, d.settings]);
   const sum = fairValueSummary(lines);
   const price = a.quote.price;
   return (

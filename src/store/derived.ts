@@ -13,6 +13,7 @@ import { INCOME_TX } from '../domain/types';
 import { D, N, ZERO } from '../domain/money';
 import { addMonths, todayISO } from '../domain/util';
 import type { MarketData } from '../domain/market';
+import { withCvmFundamentals } from '../domain/calc/cvmFundamentals';
 
 export function useDerived() {
   const assets = useStore((s) => s.assets);
@@ -28,7 +29,10 @@ export function useDerived() {
     const positions = computePositions(assets, transactions, asOf);
     const totals = portfolioTotals(assets, positions, transactions);
     const alloc = computeAllocation(assets, positions, settings);
-    const ctx: ScoreContext = { assets, positions, settings, alloc, market, asOf };
+    // fundamentos efetivos: CVM (primária) → manual (reserva). d.assets continua com o cadastro original.
+    const fund = Object.fromEntries(assets.map((a) => [a.id, withCvmFundamentals(a, market)]));
+    const effAssets = assets.map((a) => fund[a.id].asset);
+    const ctx: ScoreContext = { assets: effAssets, positions, settings, alloc, market, asOf };
     const ranking = rankAssets(ctx);
     const scoreById = Object.fromEntries(ranking.map((r) => [r.assetId, r]));
     const historyStart = transactions.reduce((m, t) => (t.date < m ? t.date : m), settings.profile.startDate);
@@ -50,7 +54,7 @@ export function useDerived() {
     const returns = portfolioReturns(assets, positions, transactions, monthEnd, market.series?.cdi, asOf);
     const autoPreview = Object.keys(market.calendar || {}).length ? planAutoProventos(assets, allTransactions, market.calendar, settings, asOf) : null;
     const conferred = new Set(conciliations.filter((c) => c.status === 'conferido').map((c) => c.txId));
-    return { asOf, historyStart, assets, transactions, allTransactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts, market, dyPortfolio, yieldOnCost, returns, upcoming: autoPreview?.upcoming || [], provDivergences: autoPreview?.divergences || [], conciliations, conferred };
+    return { asOf, historyStart, assets, fund, transactions, allTransactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts, market, dyPortfolio, yieldOnCost, returns, upcoming: autoPreview?.upcoming || [], provDivergences: autoPreview?.divergences || [], conciliations, conferred };
   }, [assets, allTransactions, settings, marketState, conciliations]);
 }
 

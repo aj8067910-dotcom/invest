@@ -116,6 +116,23 @@ Fundamento: Piotroski (2000), Altman (2005, Z″ EM), Graham, Bazin, normas CVM;
 
 Regras: com a carteira em formação (patrimônio menor que 10 aportes mensais) os tetos não bloqueiam compras, como já acontecia com o limite geral. ETFs e Tesouro sem teto próprio seguem só a alocação da classe.
 
+## Indicadores da CVM em todas as telas (correção)
+
+**Problema:** payout, endividamento e geração de caixa apareciam vazios no Resumo, Dividendos, Ranking e alertas. Esses lugares liam só os campos manuais; os dados da CVM eram usados apenas na Análise 360°. Além disso, o robô tinha erros de leitura.
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Cálculo único (`domain/calc/cvmFundamentals.ts`) | — | Payout, ROE, margens, Dív. líq./EBITDA, fluxo de caixa livre, FCF yield, LPA, VPA, P/L, P/VP, EV/EBITDA e crescimento calculados da DFP; usados no ranking, alertas de tese, valuation, Resumo e Dividendos. Manual só entra quando a CVM não tem o dado | Hierarquia de fontes (CVM antes de manual) |
+| Payout | Caixa pago em 1 ano ÷ lucro do ano (Vale 145%, TIM 124%) | Soma de 3 anos (Vale 80%, TIM 100%) | O dividendo pago num ano é, em geral, do lucro do ano anterior |
+| Robô — consolidado zerado | TIM sem dados em 2024–2025 | Usa a demonstração individual quando o consolidado vem zerado | |
+| Robô — dívida | BBSE3: "Passivo Exigível a Longo Prazo" contado como dívida | Só contas de empréstimos, financiamentos e debêntures | Plano de contas CVM (seguradoras/holdings) |
+| Robô — lucro líquido | Itaú (conta 3.09) sem lucro | Conta identificada pela descrição; preferência pelo lucro atribuído à controladora | CPC 26 / IAS 1 |
+| Robô — quantidade de ações | Algumas empresas em milhares (LPA 1.000× maior) | Escala conferida com o LPA informado na DRE | |
+| Robô — dividendos pagos | Eletrobras/AXIA sem dividendos ("Pagamento e remuneração aos acionistas") | Descrição reconhecida | |
+| Análise 360° → Fundamentos | Só campos manuais | Tabela "Indicadores calculados da CVM" com valor CVM, manual, qual é usado e a fórmula | |
+
+Limitações: bancos e seguradoras não têm margem, Dív./EBITDA e FCL (não se aplicam); a dívida não inclui arrendamentos (IFRS 16); dados anuais (DFP), sem os últimos 12 meses trimestrais.
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

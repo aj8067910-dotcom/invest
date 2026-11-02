@@ -2,6 +2,7 @@
 // Cada indicador traz valor, status (verde / amarelo / vermelho), fonte, data-base e o fundamento
 // ("por que isso importa"). Modelos estimados majoritariamente com dados dos EUA servem como
 // TRIAGEM, não como previsão.
+import { payout3y } from './cvmFundamentals';
 import type { Asset, Settings } from '../types';
 import type { CompanyFin, FinYear, FiiInfo, MarketData, RiskStats } from '../market';
 import type { BazinResult } from './bazin';
@@ -198,7 +199,7 @@ export function analyze(a: Asset, s: Settings, market: MarketData, bz: BazinResu
   const ev = mcap !== null && netDebt(y0) !== null ? mcap + (netDebt(y0) as number) : null;
   const roe = y0 ? div(y0.netIncome, avg(y0.equity, y1?.equity)) : null;
   const roePct = roe !== null ? roe * 100 : (a.fundamentals.roe ?? null);
-  const payoutPct = y0 && isNum(y0.dividendsPaid) && isNum(y0.netIncome) && y0.netIncome > 0 ? (y0.dividendsPaid / y0.netIncome) * 100 : (a.fundamentals.payout ?? null);
+  const payoutPct = payout3y(ys) ?? (a.fundamentals.payout ?? null);
   const k = a.valuation?.gordonK ?? null;
   const g = roe !== null && payoutPct !== null ? roe * (1 - payoutPct / 100) : null;
   const fairPvp = roe !== null && k && g !== null && k / 100 > g ? (roe - g) / (k / 100 - g) : null;

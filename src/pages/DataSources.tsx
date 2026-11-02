@@ -109,7 +109,7 @@ export default function DataSources() {
                   <td>{a.quote.price === null ? <DataTag kind="ausente" /> : <DataTag kind={a.quote.kind === 'manual' ? 'manual' : 'real'} date={a.quote.date} source={a.quote.source} />}{ageDays(a.quote.date) > 7 && a.quote.date && <span className="warn-t" style={{ fontSize: 11 }}> desatualizada</span>}</td>
                   <td className="dim" style={{ fontSize: 12 }}>{a.quote.source || '—'}</td>
                   <td className="num">{a.class === 'acao' || a.class === 'fii' ? a.distributions.length || <span className="neg">0</span> : <span className="dim">n/a</span>}</td>
-                  <td>{a.class === 'cripto' ? <span className="dim">n/a</span> : a.fundamentals.updatedAt ? <DataTag kind="manual" date={a.fundamentals.updatedAt} source={a.fundamentals.source} /> : a.class === 'acao' || a.class === 'fii' ? <DataTag kind="ausente" /> : <span className="dim">ficha</span>}</td>
+                  <td>{a.class === 'cripto' ? <span className="dim">n/a</span> : d.fund[a.id]?.cvm ? <DataTag kind="real" source={`CVM — DFP ${d.fund[a.id].cvm!.year}`} /> : a.fundamentals.updatedAt ? <DataTag kind="manual" date={a.fundamentals.updatedAt} source={a.fundamentals.source} /> : a.class === 'acao' || a.class === 'fii' ? <DataTag kind="ausente" /> : <span className="dim">ficha</span>}</td>
                 </tr>
               ))}
             </tbody>
