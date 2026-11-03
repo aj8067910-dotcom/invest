@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computePositions } from './positions';
-import { fmtMonths, recovery, simulateAporte, yocHistory, yocSummary } from './yoc';
+import { fmtMonths, recovery, simulateAporte, snowball, yocHistory, yocSummary } from './yoc';
 import { defaultSettings, makeAsset } from '../seed';
 import type { Transaction } from '../types';
 import { priceFmt, qtyFmt } from '../format';
@@ -90,3 +90,19 @@ describe('Criptoativos: 8 casas decimais', () => {
     expect(qtyFmt(pos[a.id].qty, 'cripto')).toBe('0,00045667');
   });
 });
+
+describe('Número mágico (bola de neve)', () => {
+  it('FII a R$ 10,00 pagando R$ 0,10/mês: 100 cotas; com 60, faltam 40 (R$ 400)', () => {
+    const f = makeAsset({ ticker: 'BOLA11', class: 'fii' });
+    f.quote = { price: 10, date: AS, source: 't' };
+    f.distributions = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, exDate: addM(i), payDate: null, value: 0.1, type: 'rendimento' as const, recurring: true, source: 't' }));
+    const s = snowball(f, S, 60, 0, AS)!;
+    expect(s.magic).toBe(100);
+    expect(s.missing).toBe(40);
+    expect(s.costMissing).toBe(400);
+    expect(s.progress).toBe(60);
+    expect(snowball(f, S, 60, 100, AS)!.monthsWithContribution).toBeGreaterThan(0);
+    expect(snowball(f, S, 120, 0, AS)!.missing).toBe(0);
+  });
+});
+function addM(i: number) { const d = new Date(Date.UTC(2025, 10 + i, 28)); return d.toISOString().slice(0, 10); }

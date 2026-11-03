@@ -164,6 +164,12 @@ Recebido e projetado nunca se misturam: o recebido vem só de lançamentos com d
 
 Armazenamento e cálculo já usavam a quantidade exata (decimal); a mudança é de exibição e digitação.
 
+## FIIs: número mágico (efeito bola de neve)
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Ficha do FII → Resumo | — | Card "Número mágico": cotas necessárias para que o rendimento de um mês compre 1 cota nova (cotação ÷ rendimento mensal líquido por cota, média de 12 meses, arredondado para cima; também pelo último rendimento), quantas você tem, quantas faltam e o custo à cotação atual, % atingido e prazo estimado aportando o valor mensal de Parâmetros e reinvestindo | Juros compostos; estimativa, não garantia |
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

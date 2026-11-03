@@ -10,6 +10,7 @@ import { BandBadge, ChartTip, ClassBadge, PriorityBadge } from '../components/co
 import { Ladder } from '../components/Ladder';
 import { AssetForm } from '../components/AssetForm';
 import { FUND_FORMULA, type FundKey } from '../domain/calc/cvmFundamentals';
+import { fmtMonths, snowball } from '../domain/calc/yoc';
 import { brl, dateBR, dateTimeBR, num, pct, priceFmt, qtyFmt, signedPct } from '../domain/format';
 import { BAND_INFO } from '../domain/calc/bazin';
 import { PRIORITY_INFO } from '../domain/calc/scoring';
@@ -126,6 +127,31 @@ function Header({ a }: { a: Asset }) {
   );
 }
 
+function SnowballCard({ a }: { a: Asset }) {
+  const d = useDerived();
+  const p = d.positions[a.id];
+  const contrib = d.settings.profile.monthlyContribution || 0;
+  const sb = snowball(a, d.settings, p.qty, contrib, d.asOf);
+  if (!sb) return <Card title="Número mágico (efeito bola de neve)"><Empty>Sem cotação para calcular.</Empty></Card>;
+  if (!sb.magic) return <Card title="Número mágico (efeito bola de neve)"><Empty>Sem histórico de rendimentos para calcular.</Empty></Card>;
+  const done = sb.missing === 0;
+  return (
+    <Card
+      title="Número mágico (efeito bola de neve)"
+      sub={`Quantidade de cotas para que o rendimento de um mês compre uma cota nova, à cotação atual de ${brl(sb.price)}. Número mágico = cotação ÷ rendimento mensal por cota (${sb.basis}), arredondado para cima.`}
+    >
+      <div className="grid g4">
+        <Stat label="Número mágico" value={`${qtyFmt(sb.magic)} cotas`} sub={`rendimento ${num(sb.monthlyPerUnit, 4)}/cota/mês${sb.magicLast && sb.magicLast !== sb.magic ? ` · pelo último rendimento: ${qtyFmt(sb.magicLast)} cotas` : ''}`} tag={<DataTag kind="estimativa" />} />
+        <Stat label="Você tem" value={`${qtyFmt(sb.held)} cotas`} sub={sb.progress !== null ? `${pct(sb.progress, 0)} do número mágico` : ''} />
+        <Stat label={done ? 'Bola de neve atingida' : 'Faltam'} value={done ? '✓' : `${qtyFmt(sb.missing!)} cotas`} sub={done ? 'o rendimento mensal já compra ao menos 1 cota' : `≈ ${brl(sb.costMissing)} à cotação atual`} tone={done ? 'pos' : 'warn'} />
+        <Stat label="Prazo estimado" value={done ? '—' : sb.monthsWithContribution === null ? '—' : fmtMonths(sb.monthsWithContribution)} sub={contrib > 0 ? `aportando ${brl(contrib)}/mês só neste FII e reinvestindo os rendimentos, à cotação atual` : 'informe o aporte mensal em Parâmetros'} />
+      </div>
+      <Meter value={sb.progress ?? 0} tone={done ? 'pos' : undefined} />
+      <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Estimativa: muda com a cotação e com o valor dos rendimentos, que não são garantidos. O prazo supõe todo o aporte mensal neste FII; é uma referência, não uma recomendação de compra.</p>
+    </Card>
+  );
+}
+
 function Summary({ a }: { a: Asset }) {
   const d = useDerived();
   const p = d.positions[a.id];
@@ -141,6 +167,7 @@ function Summary({ a }: { a: Asset }) {
         <Stat label="Proventos recebidos" value={brl(p.income)} tone="pos" tag={<DataTag kind="real" />} sub={p.reinvested ? `reinvestido ${brl(p.reinvested)}` : ''} />
         <Stat label="Retorno total" value={brl(p.totalReturn)} sub={p.totalReturnPct === null ? '' : signedPct(p.totalReturnPct)} tone={p.totalReturn >= 0 ? 'pos' : 'neg'} />
       </div>
+      {a.class === 'fii' && <SnowballCard a={a} />}
       <div className="grid g2">
         <Card title="Composição da pontuação" sub={`Cobertura de dados ${pct(r.coverage, 0)} · pesos configuráveis em Parâmetros`}>
           <table className="tbl">

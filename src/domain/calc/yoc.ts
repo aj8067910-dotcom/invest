@@ -264,3 +264,58 @@ export function fmtMonths(m: number | null): string {
   if (r === 12) { y++; r = 0; }
   return `${y} ${y === 1 ? 'ano' : 'anos'}${r ? ` e ${r} ${r === 1 ? 'mês' : 'meses'}` : ''} (${m.toFixed(1).replace('.', ',')} meses)`;
 }
+
+// ───────────── número mágico (efeito bola de neve) ─────────────
+
+export interface Snowball {
+  price: number;
+  monthlyPerUnit: number | null; // rendimento mensal líquido por cota usado na conta
+  basis: string;
+  lastPerUnit: number | null;
+  magic: number | null; // cotas para que 1 mês de rendimento compre 1 cota nova
+  magicLast: number | null; // idem, usando só o último rendimento
+  held: number;
+  missing: number | null;
+  costMissing: number | null;
+  progress: number | null; // %
+  monthsWithContribution: number | null; // aportando + reinvestindo tudo, à cotação atual
+}
+
+/**
+ * Número mágico = cotação ÷ rendimento mensal por cota, arredondado para cima. A partir dele, o rendimento
+ * de cada mês compra ao menos uma cota nova sem dinheiro novo. Base: média dos rendimentos recorrentes
+ * líquidos dos últimos 12 meses ÷ 12 (mais estável que o último pagamento, que também é mostrado).
+ */
+export function snowball(a: Asset, s: Settings, held: number, monthlyContribution: number, asOf = todayISO()): Snowball | null {
+  const price = isNum(a.quote.price) && a.quote.price > 0 ? a.quote.price : null;
+  if (!price) return null;
+  const start = addMonths(asOf, -12);
+  const rec = a.distributions.filter((d) => d.recurring && d.type !== 'amortizacao' && d.exDate <= asOf).sort((x, y) => x.exDate.localeCompare(y.exDate));
+  const last = rec.length ? N(netPerUnit(rec[rec.length - 1], a, s)) : null;
+  const y12 = rec.filter((d) => d.exDate > start).reduce((x, d) => x.plus(netPerUnit(d, a, s)), ZERO);
+  const monthly = y12.greaterThan(0) ? N(y12.dividedBy(12)) : last;
+  const basis = y12.greaterThan(0) ? 'média dos últimos 12 meses (líquida) ÷ 12' : 'último rendimento';
+  const magicOf = (m: number | null) => (m && m > 0 ? N(D(price).dividedBy(m).ceil()) : null);
+  const magic = magicOf(monthly);
+  const have = Math.floor(held);
+  const missing = magic === null ? null : Math.max(0, magic - have);
+  let months: number | null = null;
+  if (magic !== null && missing === 0) months = 0;
+  else if (magic !== null && monthly && monthlyContribution > 0) {
+    // aporta todo mês e reinveste todo o rendimento; sobra fica em caixa para o mês seguinte
+    let q = have, cash = 0, t = 0;
+    while (q < magic && t < 1200) {
+      t++;
+      cash += monthlyContribution + q * monthly;
+      const buy = Math.floor(cash / price);
+      q += buy;
+      cash -= buy * price;
+    }
+    months = q >= magic ? t : null;
+  }
+  return {
+    price, monthlyPerUnit: monthly, basis, lastPerUnit: last, magic, magicLast: magicOf(last), held: have,
+    missing, costMissing: missing === null ? null : N(D(missing).times(price)),
+    progress: magic ? Math.min(100, (have / magic) * 100) : null, monthsWithContribution: months,
+  };
+}
