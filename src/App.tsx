@@ -23,6 +23,7 @@ import Projection from './pages/Projection';
 import Operations from './pages/Operations';
 import DataSources from './pages/DataSources';
 import SettingsPage from './pages/Settings';
+import { publishSellAlert } from './services/sellAlert';
 
 const NAV: { sec: string; items: { to: string; label: string; icon: string }[] }[] = [
   { sec: 'Visão', items: [{ to: '/', label: 'Painel', icon: 'painel' }, { to: '/carteira', label: 'Carteira & Watchlist', icon: 'carteira' }] },
@@ -209,7 +210,20 @@ export default function App() {
         </main>
       </div>
       <ConflictModal />
+      <SellAlertSync />
       <Toast />
     </div>
   );
+}
+
+/** Publica o alerta de venda (gist secreto) quando os status da aba Oportunidade de Venda mudam. */
+function SellAlertSync() {
+  const d = useDerived();
+  const hydrated = useStore((s) => s.hydrated);
+  useEffect(() => {
+    if (!hydrated) return;
+    const t = setTimeout(() => publishSellAlert(d.sell, d.asOf), 4000);
+    return () => clearTimeout(t);
+  }, [hydrated, d.sell, d.asOf]);
+  return null;
 }

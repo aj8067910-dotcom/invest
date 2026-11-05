@@ -74,7 +74,7 @@ function Header({ a }: { a: Asset }) {
             <div className="row" style={{ gap: 8 }}>
               <h1 className="mono" style={{ fontSize: 24 }}>{a.ticker}</h1>
               <ClassBadge c={a.class} />
-              <Badge tone={a.status === 'carteira' ? 'info' : 'muted'}>{a.status === 'carteira' ? 'Carteira' : 'Watchlist'}</Badge>
+              <Badge tone={a.status === 'carteira' ? 'info' : a.status === 'venda' ? 'warn' : 'muted'}>{a.status === 'carteira' ? 'Carteira' : a.status === 'venda' ? 'Oportunidade de Venda' : 'Watchlist'}</Badge>
               <PriorityBadge p={r.priority} />
               {r.bazin.applicable && <BandBadge b={r.bazin.band} />}
             </div>
@@ -812,13 +812,14 @@ function RegistryTab({ a }: { a: Asset }) {
   const txCount = useStore((s) => s.transactions.filter((t) => t.assetId === a.id || t.targetAssetId === a.id).length);
   const nav = useNavigate();
   const [confirmDel, setConfirmDel] = useState(false);
-  const to = a.status === 'carteira' ? 'watchlist' : 'carteira';
+  const to = a.status === 'carteira' ? 'watchlist' : 'carteira'; // da venda ou da watchlist volta para a carteira
   return (
-    <Card title="Cadastro do ativo" sub={`Criado em ${dateBR(a.createdAt)} · atualizado em ${dateTimeBR(a.updatedAt)} · ${CLASS_LABEL[a.class]} · ${a.status === 'carteira' ? 'na carteira' : 'na watchlist'}`}>
+    <Card title="Cadastro do ativo" sub={`Criado em ${dateBR(a.createdAt)} · atualizado em ${dateTimeBR(a.updatedAt)} · ${CLASS_LABEL[a.class]} · ${a.status === 'carteira' ? 'na carteira' : a.status === 'venda' ? 'em Oportunidade de Venda' : 'na watchlist'}`}>
       <AssetForm key={a.status} initial={a} onSave={(x) => { update(a.id, x); toast('Cadastro salvo.'); }} />
       <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '18px 0' }} />
       <div className="row">
         <button className="btn sm" onClick={() => { update(a.id, { status: to }); toast(`${a.ticker} movido para a ${to}.`); }}>Mover para a {to}</button>
+        {a.status === 'carteira' && <button className="btn sm" onClick={() => { update(a.id, { status: 'venda' }); toast(`${a.ticker} movido para Oportunidade de Venda.`); }}>Mover para Oportunidade de Venda</button>}
         <button className="btn danger sm" onClick={() => setConfirmDel(true)}>Remover ativo</button>
       </div>
       <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title={`Remover ${a.ticker}?`}>
@@ -829,7 +830,7 @@ function RegistryTab({ a }: { a: Asset }) {
           </>
         ) : (
           <>
-            <p>O ativo sai da {a.status === 'carteira' ? 'carteira' : 'watchlist'}. Não há lançamentos dele no histórico.</p>
+            <p>O ativo sai da lista. Não há lançamentos dele no histórico.</p>
             <div className="row" style={{ justifyContent: 'flex-end' }}>
               <button className="btn ghost" onClick={() => setConfirmDel(false)}>Cancelar</button>
               <button className="btn danger" onClick={() => { remove(a.id); toast(`${a.ticker} removido.`); nav('/carteira'); }}>Remover</button>

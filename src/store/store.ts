@@ -330,7 +330,7 @@ export const useStore = create<State>()(
         const ps = p.settings;
         // mescla configurações para incorporar novos campos sem perder os do usuário
         const settings: Settings = ps
-          ? { ...d, ...ps, profile: { ...d.profile, ...ps.profile }, limits: { ...d.limits, ...ps.limits }, thesisRules: { ...d.thesisRules, ...ps.thesisRules }, scoring: { ...d.scoring, ...ps.scoring }, allocator: { ...d.allocator, ...ps.allocator }, integrations: { ...d.integrations, ...ps.integrations }, weights: { ...d.weights, ...ps.weights }, scenarios: { ...d.scenarios, ...ps.scenarios }, tax: { ...d.tax, ...ps.tax }, dpa: { ...d.dpa, ...ps.dpa }, limits360: { ...d.limits360, ...ps.limits360 }, bands: ps.bands && 'margin' in ps.bands ? ps.bands : d.bands }
+          ? { ...d, ...ps, profile: { ...d.profile, ...ps.profile }, limits: { ...d.limits, ...ps.limits }, thesisRules: { ...d.thesisRules, ...ps.thesisRules }, scoring: { ...d.scoring, ...ps.scoring }, allocator: { ...d.allocator, ...ps.allocator }, integrations: { ...d.integrations, ...ps.integrations }, weights: { ...d.weights, ...ps.weights }, scenarios: { ...d.scenarios, ...ps.scenarios }, tax: { ...d.tax, ...ps.tax }, dpa: { ...d.dpa, ...ps.dpa }, limits360: { ...d.limits360, ...ps.limits360 }, sell: { ...d.sell, ...ps.sell }, bands: ps.bands && 'margin' in ps.bands ? ps.bands : d.bands }
           : current.settings;
         const assets = p.assets || current.assets;
         return { ...current, ...p, settings, transactions: migrateTransactions(p.transactions || [], assets), audit: p.audit || [], imports: p.imports || [], conciliations: p.conciliations || [] };

@@ -41,6 +41,7 @@ export function AssetForm({ initial, onSave, onCancel, isNew }: { initial: Asset
           <select value={a.status} onChange={(e) => up({ status: e.target.value as Asset['status'] })}>
             <option value="carteira">Carteira</option>
             <option value="watchlist">Watchlist</option>
+            <option value="venda">Oportunidade de Venda</option>
           </select>
         </Field>
         <Field label="Setor">

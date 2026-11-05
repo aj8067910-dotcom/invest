@@ -78,7 +78,7 @@ export interface MarketData {
   fiis: Record<string, FiiInfo>;
   risk: Record<string, RiskStats>;
   monthEnd: Record<string, [string, number][]>; // fechamento de fim de mês
-  series: { cdi?: [string, number][]; ipca?: [string, number][] };
+  series: { cdi?: [string, number][]; ipca?: [string, number][]; ntnb?: [string, number][] };
   ntnb: { rate: number; maturity: string; date: string; source: string } | null;
   segments: Record<string, string>;
   stockEvents: Record<string, { label: string; factor: number; dataCom: string | null; approvedOn: string | null; source: string; collectedAt: string }[]>;

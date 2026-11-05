@@ -13,6 +13,7 @@ import { CLASS_LABEL, CLASS_ORDER } from '../domain/types';
 import { toast } from '../components/toast';
 import { isHeld } from '../domain/calc/positions';
 import { capOf } from '../domain/calc/concentration';
+import { SellMethodology, SellPanel } from '../components/SellPanel';
 import { Badge } from '../components/ui';
 import type { Asset } from '../domain/types';
 
@@ -29,22 +30,23 @@ export default function Assets() {
   const d = useDerived();
   const { addAsset, updateAsset, removeAsset } = useStore();
   const nav = useNavigate();
-  const [status, setStatus] = useState<AssetStatus | 'todos'>('todos');
+  const [status, setStatus] = useState<AssetStatus | 'todos' | 'metodologia'>(() => (new URLSearchParams(location.hash.split('?')[1] || '').get('aba') as any) || 'todos');
   const [cls, setCls] = useState<AssetClass | 'todas'>('todas');
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'value', dir: -1 });
   const [adding, setAdding] = useState<AssetStatus | null>(null);
-  const move = (a: Asset) => {
-    const to: AssetStatus = a.status === 'carteira' ? 'watchlist' : 'carteira';
+  const LIST: Record<AssetStatus, string> = { carteira: 'a carteira', watchlist: 'a watchlist', venda: 'Oportunidade de Venda' };
+  const move = (a: Asset, target?: AssetStatus) => {
+    const to: AssetStatus = target ?? (a.status === 'carteira' ? 'watchlist' : 'carteira');
     const p = d.positions[a.id];
     if (to === 'watchlist' && isHeld(p) && !confirm(`${a.ticker} ainda tem posição (${qtyFmt(p.qty, a.class)}). Ela continua no patrimônio e no histórico; só a lista muda. Mover para a watchlist?`)) return;
     updateAsset(a.id, { status: to });
-    toast(`${a.ticker} movido para a ${to === 'carteira' ? 'carteira' : 'watchlist'}.`);
+    toast(`${a.ticker} movido para ${LIST[to]}.${to === 'venda' ? ' Preço médio, cotação, proventos e indicadores são calculados automaticamente na aba.' : ''}`);
   };
   const remove = (a: Asset) => {
     const n = d.allTransactions.filter((t) => t.assetId === a.id || t.targetAssetId === a.id).length;
     if (n) return toast(`${a.ticker} tem ${n} lançamento(s) no histórico e não pode ser removido (o livro não apaga lançamentos). Use "Mover para watchlist" ou estorne os lançamentos na Central de Operações.`, true);
-    if (confirm(`Remover ${a.ticker} da ${a.status === 'carteira' ? 'carteira' : 'watchlist'}?`)) {
+    if (confirm(`Remover ${a.ticker} de ${LIST[a.status]}?`)) {
       removeAsset(a.id);
       toast(`${a.ticker} removido.`);
     }
@@ -74,7 +76,7 @@ export default function Assets() {
       {label} {sort.k === k ? (sort.dir === 1 ? '▲' : '▼') : ''}
     </th>
   );
-  const counts = { carteira: d.assets.filter((a) => a.status === 'carteira').length, watchlist: d.assets.filter((a) => a.status === 'watchlist').length };
+  const counts = { carteira: d.assets.filter((a) => a.status === 'carteira').length, watchlist: d.assets.filter((a) => a.status === 'watchlist').length, venda: d.assets.filter((a) => a.status === 'venda').length };
 
   return (
     <div className="stack">
@@ -92,9 +94,9 @@ export default function Assets() {
       <Card>
         <div className="filters">
           <div className="seg">
-            {(['todos', 'carteira', 'watchlist'] as const).map((s) => (
+            {(['todos', 'carteira', 'watchlist', 'venda', 'metodologia'] as const).map((s) => (
               <button key={s} className={status === s ? 'on' : ''} onClick={() => setStatus(s)}>
-                {s === 'todos' ? `Todos (${d.assets.length})` : s === 'carteira' ? `Carteira (${counts.carteira})` : `Watchlist (${counts.watchlist})`}
+                {s === 'todos' ? `Todos (${d.assets.length})` : s === 'carteira' ? `Carteira (${counts.carteira})` : s === 'watchlist' ? `Watchlist (${counts.watchlist})` : s === 'venda' ? `Oportunidade de Venda (${counts.venda})` : 'Metodologia de Venda'}
               </button>
             ))}
           </div>
@@ -106,6 +108,7 @@ export default function Assets() {
           </select>
           <input placeholder="Buscar ticker, nome, setor…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        {status === 'venda' ? <SellPanel onMoveBack={(a) => move(a, 'carteira')} /> : status === 'metodologia' ? <SellMethodology /> : (<>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
@@ -162,6 +165,7 @@ export default function Assets() {
                     <button className="btn ghost sm" title={a.status === 'carteira' ? 'Mover para a watchlist' : 'Mover para a carteira'} onClick={() => move(a)}>
                       {a.status === 'carteira' ? '→ Watchlist' : '→ Carteira'}
                     </button>
+                    {a.status === 'carteira' && <button className="btn ghost sm" title="Mover para Oportunidade de Venda" onClick={() => move(a, 'venda')}>→ Venda</button>}
                     <button className="btn ghost sm" title="Remover da lista (só ativos sem lançamentos)" onClick={() => remove(a)}>Remover</button>
                   </td>
                 </tr>
@@ -172,6 +176,7 @@ export default function Assets() {
         <p className="muted" style={{ fontSize: 12 }}>
           Margem = (Teto − Preço) ÷ Teto, só para ações e FIIs; ETFs, Tesouro e cripto são avaliados por alocação. Preço de interesse: o manual (com justificativa e data, no cadastro) ou o preço de oportunidade calculado. “mudou” indica alerta da análise 360° que mudou de cor nos últimos 30 dias. <BandBadge b={null} /> = sem cotação ou sem proventos.
         </p>
+        </>)}
       </Card>
       <Modal open={!!adding} onClose={() => setAdding(null)} title={adding === 'carteira' ? 'Novo ativo na carteira' : 'Novo ativo na watchlist'} wide>
         <AssetForm

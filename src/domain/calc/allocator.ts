@@ -66,6 +66,10 @@ export function planContribution(input: AllocatorInput, ranking: ScoreResult[], 
     if (!a) continue;
     if (input.eligibleIds && !input.eligibleIds.includes(a.id)) continue;
     const price = isNum(a.quote.price) && a.quote.price > 0 ? a.quote.price : null;
+    if (a.status === 'venda') {
+      excluded.push({ asset: a, reason: 'Em Oportunidade de Venda: não entra na lista de compras.' });
+      continue;
+    }
     // watchlist só entra na lista de compras quando está em Oportunidade
     if (a.status === 'watchlist' && (r.priority !== 'oportunidade' || (isBazinClass(a.class) && r.bazin.band !== 'oportunidade'))) {
       excluded.push({ asset: a, reason: `Watchlist: só entra no aporte em Oportunidade (agora: ${PRIORITY_INFO[r.priority].label}).` });

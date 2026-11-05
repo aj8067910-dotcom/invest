@@ -6,6 +6,7 @@ import { computeAllocation } from '../domain/calc/allocation';
 import { rankAssets, type ScoreContext } from '../domain/calc/scoring';
 import { incomeSummary } from '../domain/calc/dividends';
 import { yocSummary } from '../domain/calc/yoc';
+import { evaluateSell } from '../domain/calc/sell';
 import { concentrationAlerts } from '../domain/calc/concentration';
 import { portfolioReturns } from '../domain/calc/returns';
 import { planAutoProventos } from '../domain/calc/proventos';
@@ -58,8 +59,10 @@ export function useDerived() {
     };
     const returns = portfolioReturns(assets, positions, transactions, monthEnd, market.series?.cdi, asOf);
     const autoPreview = Object.keys(market.calendar || {}).length ? planAutoProventos(assets, allTransactions, market.calendar, settings, asOf) : null;
+    // Oportunidade de Venda: avaliados só os ativos que você moveu para a aba
+    const sell = assets.filter((a) => a.status === 'venda').map((a) => evaluateSell({ asset: a, eff: fund[a.id].asset, position: positions[a.id], txs: transactions, market, settings, asOf }));
     const conferred = new Set(conciliations.filter((c) => c.status === 'conferido').map((c) => c.txId));
-    return { asOf, historyStart, assets, fund, yoc, transactions, allTransactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts, market, dyPortfolio, yieldOnCost, yieldOnCostRealized, returns, upcoming: autoPreview?.upcoming || [], provDivergences: autoPreview?.divergences || [], conciliations, conferred };
+    return { asOf, historyStart, assets, fund, yoc, sell, transactions, allTransactions, settings, positions, totals, alloc, ctx, ranking, scoreById, income, forward, concAlerts, market, dyPortfolio, yieldOnCost, yieldOnCostRealized, returns, upcoming: autoPreview?.upcoming || [], provDivergences: autoPreview?.divergences || [], conciliations, conferred };
   }, [assets, allTransactions, settings, marketState, conciliations]);
 }
 

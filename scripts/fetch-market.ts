@@ -276,6 +276,21 @@ try {
     if (!ref || Math.abs(y - target) < Math.abs(ref.y - target)) ref = { y, rate: brNum(c[3]), maturity: toIso(c[1]) };
   }
   if (ref) out.ntnb = { rate: ref.rate, maturity: ref.maturity, date: lastDate, source: 'Tesouro Transparente (NTN-B, taxa de compra)' };
+  // série mensal da taxa real da NTN-B (~10 anos) no último dia de cada mês: base do "IPCA+ do mesmo período"
+  const byMonth = new Map<string, { d: string; best: { gap: number; rate: number } | null }>();
+  for (const l of lines) {
+    const c = l.split(';');
+    if (c[0] !== 'Tesouro IPCA+ com Juros Semestrais') continue;
+    const d = toIso(c[2]);
+    const m = d.slice(0, 7);
+    const rate = brNum(c[3]) || brNum(c[4]);
+    if (!rate) continue;
+    const gap = Math.abs(Number(c[1].slice(6)) - (Number(d.slice(0, 4)) + 10));
+    const cur = byMonth.get(m);
+    if (!cur || d > cur.d) byMonth.set(m, { d, best: { gap, rate } });
+    else if (d === cur.d && (!cur.best || gap < cur.best.gap)) cur.best = { gap, rate };
+  }
+  out.series.ntnb = [...byMonth.entries()].filter(([, v]) => v.best).map(([m, v]) => [m, v.best!.rate] as [string, number]).sort((x, y) => x[0].localeCompare(y[0]));
 } catch (e: any) {
   err(`Tesouro: ${e.message}`);
 }

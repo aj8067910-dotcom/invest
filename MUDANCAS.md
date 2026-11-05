@@ -170,6 +170,17 @@ Armazenamento e cálculo já usavam a quantidade exata (decimal); a mudança é 
 |---|---|---|---|
 | Ficha do FII → Resumo | — | Card "Número mágico": cotas necessárias para que o rendimento de um mês compre 1 cota nova (cotação ÷ rendimento mensal líquido por cota, média de 12 meses, arredondado para cima; também pelo último rendimento), quantas você tem, quantas faltam e o custo à cotação atual, % atingido e prazo estimado aportando o valor mensal de Parâmetros e reinvestindo | Juros compostos; estimativa, não garantia |
 
+## Oportunidade de Venda e Metodologia de Venda
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Carteira & Watchlist | Abas Todos, Carteira, Watchlist | + **Oportunidade de Venda** (vazia; você move com "→ Venda") e **Metodologia de Venda** | Pedido do investidor |
+| Oportunidade de Venda | — | Por ativo: quantidade, preço médio, cotação, proventos recebidos, retorno total, 5 critérios (Bazin 6%, prêmio Graham, P/L e P/VP vs. 5 anos, custo de oportunidade vs. CDI e IPCA + NTN-B, sustentabilidade), meta editável, Status (VENDER verde, AGUARDAR amarelo, NÃO VENDER vermelho), cotação em que vira VENDER, IR estimado; detalhe com indicadores da CVM | docs/METODOLOGIA_VENDA.md (Bazin, Graham, Fisher, Lynch, Barsi; Odean 1998; Barber e Odean 2000; Campbell e Shiller 1998; Lintner 1956) |
+| Central de aportes | — | Ativos em Oportunidade de Venda não entram na lista de compras | |
+| Parâmetros | — | Card "Critérios de venda" com todos os limiares | |
+| Robô | — | Série mensal da taxa real da NTN-B (~10 anos) desde 2004, para o "IPCA+ do mesmo período" | Tesouro Transparente |
+| Alerta diário | — | Com a nuvem ativa, o painel grava num gist secreto só ticker, status, sinais e preços de referência (sem quantidades, sem valores da carteira); o "Radar da Carteira — Resumo Diário" lê esse arquivo e avisa por e-mail quando houver VENDER | Repositório é público: nada pessoal vai para ele |
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

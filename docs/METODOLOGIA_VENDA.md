@@ -1,6 +1,7 @@
-# Metodologia de Venda — proposta para aprovação
+# Metodologia de Venda
 
-> Status: **PROPOSTA** (nada foi alterado no painel). Depois da aprovação, este texto vira a aba "Metodologia de Venda".
+> Status: **APROVADA em 05/11/2026** e implementada nas abas "Oportunidade de Venda" e "Metodologia de Venda" (Carteira & Watchlist).
+> Decisões do investidor: saída Bazin em **6%** (o preço pela regra do livro, 4%, aparece ao lado); os **5 critérios** contam na regra dos 2 sinais; com retorno negativo, status "NÃO VENDER" **com aviso "⚠ revisar tese"** quando houver deterioração; alerta por e-mail via **gist secreto sem valores**.
 > A plataforma classifica e explica; a decisão de vender é sempre sua.
 
 ## 1. O que dizem as referências
@@ -42,7 +43,7 @@ Os dados vêm automaticamente: preço médio, quantidade e proventos do livro da
 
 Cada linha mostra quais critérios acenderam, o IR estimado da venda (com a isenção de R$ 20 mil/mês para ações) e o preço a partir do qual o status muda para VENDER.
 
-## 4. Pontos que precisam da sua decisão
+## 4. Pontos decididos (ver topo)
 
 1. **DY do preço de saída (critério 1):** 6% (seu pedido) ou 4% (regra de venda de Bazin)? Com 6%, o sinal acende assim que o ativo passa do preço-teto de compra. Com 4%, só quando está cerca de 50% acima dele.
 2. **Critérios 4 e 5 não medem sobrevalorização:** medem custo de oportunidade e deterioração (os motivos 2 e 3 de Fisher). Proposta: contar os 5 como "sinais de venda" na regra dos 2 critérios.

@@ -108,6 +108,20 @@ export default function SettingsPage() {
 
       <CapTable />
 
+      <Card title="Critérios de venda" sub="Usados na aba Oportunidade de Venda (Carteira & Watchlist). Fundamentos na aba Metodologia de Venda.">
+        <div className="form-grid">
+          {n(['sell', 'exitDy'], 'DY do preço de saída (Bazin)', '%', 'Sinal quando o DY projetado fica abaixo disto. O livro usa 4% para vender; 6% é o piso de compra')}
+          {n(['sell', 'grahamPremium'], 'Prêmio sobre Graham', '%', 'Sinal acima deste prêmio sobre √(22,5 × LPA × VPA)')}
+          {n(['sell', 'multiplesPct'], 'Múltiplos acima da média de 5 anos', '%')}
+          {n(['sell', 'payoutMax'], 'Payout de 3 anos acima de', '%')}
+          {n(['sell', 'payoutRising'], 'Payout subindo 3 anos e acima de', '%')}
+          {n(['sell', 'ndEbitdaMax'], 'Dív. líq./EBITDA acima de', 'x')}
+          {n(['sell', 'ndEbitdaRise'], 'Dív. líq./EBITDA subiu em 2 anos', 'x')}
+          {n(['sell', 'dividendCut'], 'Queda do provento 12m', '%')}
+          {n(['sell', 'minSignals'], 'Sinais para VENDER', '', 'Regra aprovada: 2')}
+        </div>
+      </Card>
+
       <Card title="Regras tributárias" sub="Valores da sua especificação, com a base legal. Editáveis; confirme com um contador.">
         <div className="form-grid">
           {n(['tax', 'jcpRate'], 'IRRF sobre JCP', '%', 'LC 224/2025 (17,5% desde 01/01/2026)')}

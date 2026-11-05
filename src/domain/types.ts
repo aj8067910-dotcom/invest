@@ -2,7 +2,8 @@
 // Convenção: todo percentual é armazenado em "pontos percentuais" (8 = 8%).
 
 export type AssetClass = 'acao' | 'fii' | 'etf' | 'tesouro' | 'cripto';
-export type AssetStatus = 'carteira' | 'watchlist';
+/** carteira · watchlist (quero comprar) · venda (avaliando vender: continua na carteira para todos os cálculos) */
+export type AssetStatus = 'carteira' | 'watchlist' | 'venda';
 export type FiiType = 'tijolo' | 'papel' | 'hibrido' | 'fof' | 'infra';
 export type ThesisStatus = 'valida' | 'observacao' | 'deteriorada';
 export type Currency = 'BRL' | 'USD';
@@ -178,6 +179,7 @@ export interface Asset {
   dpaRef?: DpaRef | null; // DPA de referência deste ativo (null → padrão da classe)
   fiiTaxExempt?: boolean; // FII cumpre os requisitos de isenção (Lei 14.754/2023)
   // ── watchlist
+  sellTarget?: number | null; // meta pessoal de rentabilidade para vender (% de retorno total)
   interestPrice?: number | null; // preço de interesse manual
   interestNote?: string | null;
   interestDate?: string | null;
@@ -531,6 +533,7 @@ export interface Settings {
   dpa: { acao: DpaRef; fii: DpaRef; commodity: DpaRef };
   bazinDy: number; // DY original de Bazin, exibido como referência
   limits360: Limits360;
+  sell: SellRules;
   allocationBand: number; // banda de tolerância (± p.p.)
   theme: 'sistema' | 'claro' | 'escuro';
 }
@@ -555,4 +558,17 @@ export interface SyncLogEntry {
   source: string;
   ok: boolean;
   message: string;
+}
+
+/** Critérios da aba Oportunidade de Venda (docs/METODOLOGIA_VENDA.md). */
+export interface SellRules {
+  exitDy: number; // % — preço de saída Bazin = DPA ÷ exitDy
+  grahamPremium: number; // % acima do Número de Graham que conta como sobrevalorizado
+  multiplesPct: number; // % acima da média de 5 anos (P/L ou P/VP)
+  payoutMax: number; // % payout médio de 3 anos
+  payoutRising: number; // % payout subindo 3 anos acima disto
+  ndEbitdaMax: number; // x
+  ndEbitdaRise: number; // x de alta em 2 anos
+  dividendCut: number; // % de queda do provento 12m vs 12m anteriores
+  minSignals: number; // sinais para VENDER
 }

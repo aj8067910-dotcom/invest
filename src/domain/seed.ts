@@ -241,6 +241,7 @@ export function defaultSettings(): Settings {
     dpa: { acao: '5a', fii: '12m', commodity: 'ciclo' },
     bazinDy: 6,
     limits360: defaultLimits360(),
+    sell: defaultSellRules(),
     allocationBand: 5,
     theme: 'sistema',
   };
@@ -254,3 +255,5 @@ export function defaultMacro(): Macro[] {
     { key: 'usd', label: 'Dólar PTAX venda', value: null, date: null, source: 'Banco Central (SGS 1)', fetchedAt: null },
   ];
 }
+
+export const defaultSellRules = (): import('./types').SellRules => ({ exitDy: 6, grahamPremium: 0, multiplesPct: 20, payoutMax: 100, payoutRising: 80, ndEbitdaMax: 3.5, ndEbitdaRise: 1, dividendCut: 20, minSignals: 2 });
