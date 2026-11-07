@@ -67,7 +67,7 @@ Evidência: arquivo de teste (`auditoria/testes/*`, `src/**/*.test.ts`), teste n
 | 58 | Persistência local (IndexedDB) e recarga | Sim | Sim | E2E | APROVADO | E2E de migração e recarga |
 | 59 | Migração reversível com cópia de segurança | Sim | Sim | E2E | APROVADO | E2E (`radar-backup-pre-v3`) |
 | 60 | Backup/restauração completos | Sim | Sim | Sim | APROVADO | `persistencia.test.ts › backup` |
-| 61 | Nuvem criptografada entre aparelhos | Sim | Sim | Parcial | PARCIAL | `cloudsync.test.ts` (criptografia); S-01 pendente; conflito entre 2 aparelhos não testado |
+| 61 | Nuvem criptografada entre aparelhos | Sim | Sim | Parcial | PARCIAL | `cloudsync.test.ts`, `seguranca.test.ts` (S-01 corrigido); conflito entre 2 aparelhos não testado |
 | 62 | Publicação contínua (GitHub Pages) | Sim | Sim | Sim | APROVADO | site 200; workflow verde |
 | 63 | Dados automáticos sem token (B3, CVM, BCB, Tesouro) | Sim | Sim | Sim | APROVADO APÓS CORREÇÃO | robô: 0 erros; D-01, D-02 |
 | 64 | Selo de fonte e data; dado defasado sinalizado | Sim | Sim | E2E | APROVADO | `ui.tsx` (Seal, DataTag "defasado" > 7 dias) |

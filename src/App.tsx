@@ -183,7 +183,7 @@ export default function App() {
           </div>
           <NavLink to="/dados" className={`cloud c-${cloud.status}`} title={cloud.message || 'Sincronização em nuvem desativada'}>
             <span className="cloud-dot" />
-            {{ off: 'Só neste aparelho', syncing: 'Sincronizando…', ok: 'Nuvem ok', error: 'Erro na nuvem', conflict: 'Escolha a versão' }[cloud.status]}
+            {{ off: 'Só neste aparelho', syncing: 'Sincronizando…', ok: 'Nuvem ok', error: 'Erro na nuvem', conflict: 'Escolha a versão', locked: 'Senha da nuvem' }[cloud.status]}
           </NavLink>
           <button className="btn sm primary" onClick={sync} disabled={!!busy} title="Atualiza cotações (brapi.dev, CoinGecko), proventos e indicadores do Banco Central">
             <Icon name="sync" /> {busy || 'Atualizar dados'}

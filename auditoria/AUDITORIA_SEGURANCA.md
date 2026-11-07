@@ -11,7 +11,7 @@ Escopo: revisão do código e das dependências. Nenhum teste destrutivo nem ten
 
 | ID | Severidade | Achado | Situação |
 |---|---|---|---|
-| S-01 | **Alta (P1)** | Token do GitHub (permissão gist) **e a senha de criptografia** guardados em texto claro no `localStorage` (`radar-cloud-config`). Quem tiver acesso ao navegador lê os dois e decifra todos os dados. | PENDENTE — exige decisão (pedir a senha a cada abertura ou "lembrar neste aparelho" opcional). Ver PLANO_DE_CORRECOES.md |
+| S-01 | **Alta (P1)** | Token do GitHub (permissão gist) **e a senha de criptografia** guardados em texto claro no `localStorage` (`radar-cloud-config`). Quem tiver acesso ao navegador lê os dois e decifra todos os dados. | **CORRIGIDO**: token cifrado com chave não-exportável do aparelho; senha pedida ao abrir, ou guardada cifrada só se você marcar "Lembrar neste aparelho" |
 | SEC-02 | Alta → Moderada | react-router-dom 6.28: redirecionamento aberto/XSS via caminhos não confiáveis (GHSA-2w69-qvjg-hvjx, CVE-2025-6847). O app só usa links internos com HashRouter, exploração improvável. | CORRIGIDO para 6.30.6 (os avisos *high* sumiram); 1 aviso *moderate* exige a versão 7 |
 | SEC-03 | Moderada (dev) | vite/esbuild/vitest/tinypool: falhas que exigem o servidor de desenvolvimento ou a interface do Vitest abertos. Não vão para o site publicado. | PENDENTE — atualização *major* (vite 8, vitest 5) |
 | SEC-04 | Baixa | Sem Content-Security-Policy. React escapa todo texto e não há `innerHTML`, `eval` nem `dangerouslySetInnerHTML` no código. | PENDENTE — recomendada uma CSP restrita às fontes usadas |
@@ -23,10 +23,10 @@ Escopo: revisão do código e das dependências. Nenhum teste destrutivo nem ten
 ## LGPD
 - Não há coleta de dados pessoais por servidor: tudo fica no aparelho e, opcionalmente, criptografado na sua conta do GitHub.
 - O e-mail do resumo diário é enviado pela tarefa agendada da sua conta Claude; o arquivo de alerta não tem valores financeiros.
-- Riscos residuais: S-01 (credenciais no navegador) e SEC-05 (tickers públicos).
+- Risco residual: SEC-05 (tickers públicos). S-01 corrigido; quem consegue executar código na própria página ainda pode usar a chave do aparelho (limite inerente a um app sem servidor).
 
 ## Recomendações, em ordem
-1. Resolver S-01 (opção recomendada: senha pedida ao abrir, com "lembrar neste aparelho" desligado por padrão).
+1. ~~Resolver S-01~~ (feito).
 2. Token do GitHub com validade de 90 dias e só a permissão "gist".
 3. CSP no `index.html` limitada a: o próprio site, api.github.com, gist.githubusercontent.com, api.bcb.gov.br, brapi.dev, api.coingecko.com, fonts.googleapis.com/fonts.gstatic.com.
 4. Atualizar vite/vitest numa janela própria (versões *major*).

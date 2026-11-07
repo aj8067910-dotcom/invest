@@ -3,6 +3,7 @@
 // O GitHub só armazena texto cifrado; sem a senha ninguém lê o conteúdo.
 import { create } from 'zustand';
 import { makeBackup, useStore, type BackupData } from '../store/store';
+import { seal, unseal, type Sealed } from './secureLocal';
 
 const GIST_DESC = 'radar-de-investimentos-sync';
 const FILE = 'radar-dados.enc.json';
@@ -11,13 +12,25 @@ const API = 'https://api.github.com';
 
 export interface CloudConfig {
   token: string;
-  passphrase: string;
+  passphrase: string | null; // null = senha não lembrada neste aparelho: pedida ao abrir
+  remember: boolean; // lembrar a senha neste aparelho (cifrada com a chave do aparelho)
   gistId: string;
   lastRemoteAt: string | null; // updatedAt do último conteúdo sincronizado
   lastHash: string | null; // hash do estado local no último sync
 }
 
-type Status = 'off' | 'syncing' | 'ok' | 'error' | 'conflict';
+/** Formato gravado no localStorage: segredos sempre cifrados (achado S-01). */
+export interface StoredConfig {
+  v: 2;
+  gistId: string;
+  lastRemoteAt: string | null;
+  lastHash: string | null;
+  remember: boolean;
+  token: Sealed;
+  pass: Sealed | null;
+}
+
+type Status = 'off' | 'syncing' | 'ok' | 'error' | 'conflict' | 'locked';
 interface CloudState {
   status: Status;
   message: string;
@@ -33,21 +46,71 @@ export interface SyncPayload extends BackupData {
 }
 
 // ───────────── configuração local (fica só neste dispositivo, nunca vai para a nuvem) ─────────────
+// Em memória durante a sessão; no localStorage só a versão cifrada (StoredConfig).
+let mem: CloudConfig | null = null;
 export function loadConfig(): CloudConfig | null {
-  try {
-    const raw = localStorage.getItem(CFG_KEY);
-    return raw ? (JSON.parse(raw) as CloudConfig) : null;
-  } catch {
-    return null;
-  }
+  return mem;
 }
-function saveConfig(c: CloudConfig | null) {
-  try {
-    if (c) localStorage.setItem(CFG_KEY, JSON.stringify(c));
-    else localStorage.removeItem(CFG_KEY);
-  } catch {
-    /* armazenamento indisponível */
+
+/** Converte para o formato gravado: token sempre cifrado; senha cifrada só se "lembrar". */
+export async function toStored(c: CloudConfig, key?: CryptoKey): Promise<StoredConfig> {
+  return { v: 2, gistId: c.gistId, lastRemoteAt: c.lastRemoteAt, lastHash: c.lastHash, remember: c.remember, token: await seal(c.token, key), pass: c.remember && c.passphrase ? await seal(c.passphrase, key) : null };
+}
+/** Lê o formato gravado. O formato antigo (senha e token em texto claro) é migrado mantendo "lembrar". */
+export async function fromStored(raw: any, key?: CryptoKey): Promise<{ cfg: CloudConfig; migrated: boolean }> {
+  if (raw?.v === 2) {
+    const token = await unseal(raw.token, key);
+    const passphrase = raw.pass ? await unseal(raw.pass, key) : null;
+    return { cfg: { token, passphrase, remember: !!raw.remember, gistId: raw.gistId, lastRemoteAt: raw.lastRemoteAt, lastHash: raw.lastHash }, migrated: false };
   }
+  return { cfg: { token: raw.token, passphrase: raw.passphrase || null, remember: true, gistId: raw.gistId, lastRemoteAt: raw.lastRemoteAt ?? null, lastHash: raw.lastHash ?? null }, migrated: true };
+}
+
+let writing: Promise<void> = Promise.resolve();
+function saveConfig(c: CloudConfig | null) {
+  mem = c;
+  writing = writing.then(async () => {
+    try {
+      if (c) localStorage.setItem(CFG_KEY, JSON.stringify(await toStored(c)));
+      else localStorage.removeItem(CFG_KEY);
+    } catch {
+      /* armazenamento indisponível */
+    }
+  });
+}
+
+/** Carrega a configuração cifrada para a memória (chamada ao abrir o app). */
+let inited: Promise<void> | null = null;
+export function initConfig(): Promise<void> {
+  inited ||= (async () => {
+    try {
+      const raw = localStorage.getItem(CFG_KEY);
+      if (!raw) return;
+      const { cfg, migrated } = await fromStored(JSON.parse(raw));
+      mem = cfg;
+      if (migrated) saveConfig(cfg); // regrava cifrado; some o texto claro
+    } catch {
+      useCloud.getState().set({ status: 'error', message: 'Não foi possível ler a configuração da nuvem neste aparelho. Desative e conecte de novo.' });
+    }
+  })();
+  return inited;
+}
+
+export const isLocked = () => !!mem && !mem.passphrase;
+const lockedMsg = () => useCloud.getState().set({ status: 'locked', message: 'Digite a senha da nuvem para sincronizar (ela não fica guardada neste aparelho).' });
+
+/** Informa a senha nesta sessão; confere decifrando a nuvem antes de aceitar. */
+export async function unlock(passphrase: string, remember: boolean): Promise<void> {
+  if (!mem) throw new Error('Nuvem não configurada.');
+  const text = await readGist(mem.token, mem.gistId);
+  if (text) await decrypt(text, passphrase); // erro "Senha de criptografia incorreta." se não bater
+  saveConfig({ ...mem, passphrase, remember });
+  await pull();
+}
+
+/** Liga/desliga "lembrar a senha neste aparelho". */
+export function setRemember(remember: boolean) {
+  if (mem) saveConfig({ ...mem, remember });
 }
 const deviceName = () => {
   const ua = navigator.userAgent;
@@ -157,12 +220,12 @@ const localDirty = (cfg: CloudConfig) => localPayload().hash !== cfg.lastHash;
  * Conecta este dispositivo. Se já existir um cofre na conta: com `prefer` indefinido e
  * dados locais com conteúdo, devolve 'escolher' para a interface perguntar o que manter.
  */
-export async function connect(token: string, passphrase: string, prefer?: 'nuvem' | 'local'): Promise<'criado' | 'baixado' | 'enviado' | 'escolher'> {
+export async function connect(token: string, passphrase: string, prefer?: 'nuvem' | 'local', remember = loadConfig()?.remember ?? false): Promise<'criado' | 'baixado' | 'enviado' | 'escolher'> {
   if (passphrase.length < 8) throw new Error('A senha de criptografia precisa ter ao menos 8 caracteres.');
   useCloud.getState().set({ status: 'syncing', message: 'Conectando ao GitHub…' });
   try {
     const gistId = await findGist(token);
-    const base: CloudConfig = { token, passphrase, gistId: gistId || '', lastRemoteAt: null, lastHash: null };
+    const base: CloudConfig = { token, passphrase, remember, gistId: gistId || '', lastRemoteAt: null, lastHash: null };
     if (!gistId) {
       const { payload, hash } = localPayload();
       const id = await writeGist(token, null, await encrypt(payload, passphrase));
@@ -204,6 +267,7 @@ export async function resolveConflict(keep: 'nuvem' | 'local') {
   const cfg = loadConfig();
   const c = useCloud.getState().conflict;
   if (!cfg) return;
+  if (!cfg.passphrase) return lockedMsg();
   if (keep === 'nuvem' && c) return applyRemote(c.remote, cfg);
   useCloud.getState().set({ conflict: null });
   await push(true);
@@ -215,6 +279,7 @@ let busy = false;
 export async function pull(): Promise<void> {
   const cfg = loadConfig();
   if (!cfg || busy) return;
+  if (!cfg.passphrase) return lockedMsg();
   busy = true;
   useCloud.getState().set({ status: 'syncing', message: 'Verificando a nuvem…' });
   try {
@@ -236,6 +301,7 @@ export async function pull(): Promise<void> {
 export async function push(force = false): Promise<void> {
   const cfg = loadConfig();
   if (!cfg || useCloud.getState().conflict) return;
+  if (!cfg.passphrase) return lockedMsg(); // sem a senha nesta sessão: as alterações ficam locais até desbloquear
   if (busy) {
     setTimeout(() => push(force), 2000); // outra operação em andamento: tenta de novo em seguida
     return;
@@ -271,11 +337,13 @@ export function startAutoSync(): Promise<void> {
   if (started) return Promise.resolve();
   started = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let first: Promise<void> = Promise.resolve();
-  if (loadConfig()) {
+  // carrega a configuração cifrada antes de qualquer sincronização
+  const first: Promise<void> = initConfig().then(() => {
+    if (!loadConfig()) return;
+    if (isLocked()) return lockedMsg();
     useCloud.getState().set({ status: 'syncing', message: 'Conectando…' });
-    first = pull();
-  }
+    return pull();
+  });
   useStore.subscribe((s, prev) => {
     if (!s.hydrated || !loadConfig()) return;
     if (s.assets === prev.assets && s.transactions === prev.transactions && s.settings === prev.settings && s.macro === prev.macro && s.snapshots === prev.snapshots && s.audit === prev.audit && s.imports === prev.imports) return;

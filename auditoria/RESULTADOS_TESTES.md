@@ -7,7 +7,7 @@ Execução: 07/11/2026, ambiente isolado (fixtures em memória e navegador de te
 |---|---|---|
 | Typecheck | `npx tsc -b --noEmit` | sem erros |
 | Build | `npm run build` | sem erros |
-| Testes | `npx vitest run` | **20 arquivos, 127 testes, 127 passando** |
+| Testes | `npx vitest run` | **21 arquivos, 133 testes, 133 passando** (inclui 6 de segurança do S-01) |
 | Dependências | `npm audit` | antes: 9 avisos (2 críticos, 4 altos — maioria em ferramentas de desenvolvimento); depois de `npm audit fix`: 8 (nenhum alto no código publicado; restantes exigem versões *major*) |
 | Lint | — | não configurado no projeto (Q-01) |
 | Navegador (21 rotas × vazio/carteira/celular) | Playwright | 0 erros de console, 0 texto NaN/undefined, 0 transbordo, carga < 1 s |

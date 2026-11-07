@@ -287,6 +287,8 @@ ul.reasons li { margin: 2px 0; }
 .c-syncing .cloud-dot { background: var(--accent); }
 .c-error .cloud-dot, .c-conflict .cloud-dot { background: var(--neg); }
 .c-error, .c-conflict { color: var(--neg); border-color: rgba(240,82,95,.45); }
+.c-locked .cloud-dot { background: var(--warn); }
+.c-locked { color: var(--warn); border-color: rgba(245,184,61,.45); }
 .c-off { color: var(--warn); border-color: rgba(245,184,61,.4); }
 @media (max-width: 600px) { .cloud { font-size: 0; gap: 0; padding: 6px; } }
 .wizard { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }

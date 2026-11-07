@@ -8,7 +8,7 @@ Classificação: **P0** crítico · **P1** alto · **P2** médio · **P3** baixo
 | A-04 | **P0** | Proventos automáticos / livro | Provento recalculado era estornado e **não recriado** | CORRIGIDO |
 | A-01 | **P1** | Painel | "Resultado acumulado" errado (ignorava caixa; sem aportes = patrimônio inteiro) | CORRIGIDO |
 | A-02 | **P1** | Importação | Reimportar após reverter um lote descartava as linhas como "duplicadas" | CORRIGIDO |
-| S-01 | **P1** | Nuvem | Token do GitHub e senha de criptografia em texto claro no `localStorage` | PENDENTE — muda o uso (decisão sua) |
+| S-01 | **P1** | Nuvem | Token do GitHub e senha de criptografia em texto claro no `localStorage` | CORRIGIDO (autorizado em 07/11/2026) |
 | A-03 | P2 | Dividendos | "DY médio real" (ponderado pelo tempo) não existia | CORRIGIDO |
 | PERF-01 | P2 | Dividendos | Histórico do YoC levava 1,5 s com 10 mil operações | CORRIGIDO (43 ms) |
 | D-01 | P2 | Robô | Requisições sem tempo-limite | CORRIGIDO |
@@ -52,11 +52,11 @@ Classificação: **P0** crítico · **P1** alto · **P2** médio · **P3** baixo
 - **Impacto:** perda silenciosa de linhas ao corrigir e reenviar um arquivo; relançar operação estornada era recusado como duplicada.
 - **Solução:** mesma de A-04.
 
-### S-01 (P1, PENDENTE) — Credenciais da nuvem em texto claro
+### S-01 (P1, CORRIGIDO) — Credenciais da nuvem em texto claro
 - **Local:** `src/services/cloudsync.ts` (`CFG_KEY = 'radar-cloud-config'`, objeto `{ token, passphrase }`).
 - **Risco:** quem tiver acesso ao navegador (extensão maliciosa, computador compartilhado, script injetado) lê o token com permissão de gist **e** a senha que protege todos os dados financeiros.
 - **Opções:** (a) pedir a senha a cada abertura e guardar só uma chave derivada não-exportável (`CryptoKey` no IndexedDB) — mais seguro, exige digitar a senha; (b) manter "lembrar neste aparelho" como opção explícita, desligada por padrão; (c) token com escopo mínimo e validade curta (já é só "gist"; recomendar validade de 90 dias).
-- **Por que não foi executado:** muda o comportamento do login da nuvem; precisa da sua decisão.
+- **Correção aplicada (opção a + b):** token sempre cifrado com chave AES-GCM 256 não-exportável do aparelho (`src/services/secureLocal.ts`); senha **não** é guardada por padrão (pedida ao abrir, estado "Senha da nuvem"); "Lembrar neste aparelho" opcional, também cifrado. Configuração antiga migrada automaticamente, sem texto claro. Testes: `auditoria/testes/seguranca.test.ts` (6) e navegador.
 
 ### Demais
 - **A-03:** `realYield()` em `src/domain/calc/yoc.ts` + coluna e card "DY médio real" na tela Dividendos.

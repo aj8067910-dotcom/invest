@@ -10,11 +10,11 @@ Regras seguidas: nenhum dado existente apagado ou sobrescrito; nenhuma funcional
 | A-03 | P2 | `src/domain/calc/yoc.ts` (nova `realYield`); `src/components/YocPanel.tsx` | Card e coluna "DY médio real" (proventos recebidos ÷ capital × tempo, a.a.) na tela Dividendos | `integracao.test.ts › A-03` | passa |
 | PERF-01 | P2 | `src/domain/calc/yoc.ts` (`yocHistory`) | Lê o custo do livro já calculado em vez de recalcular a carteira a cada mês | `yoc.test.ts › histórico` (mesmos valores); `desempenho.test.ts` (1.480 → 43 ms) | passa |
 | D-01 | P2 | `scripts/fetch-market.ts` | Tempo-limite de 90 s por requisição | robô executado: 0 erros | passa |
-| D-02 | P2 | `.github/workflows/deploy.yml` | Se o robô falhar por completo, republica o último `market-data.json` válido | inspeção; executa no próximo deploy | a confirmar no GitHub Actions |
+| D-02 | P2 | `.github/workflows/deploy.yml` | Se o robô falhar por completo, republica o último `market-data.json` válido | deploy nº 26 no GitHub Actions concluído com o passo novo | passa |
+| S-01 | P1 | `src/services/secureLocal.ts` (novo); `src/services/cloudsync.ts` (`toStored`, `fromStored`, `initConfig`, `unlock`, `setRemember`, estado `locked`); `src/components/CloudCard.tsx`; `src/App.tsx`; `src/styles.css` | Token sempre cifrado com chave não-exportável do aparelho; senha da nuvem só na memória da sessão, ou cifrada se você marcar "Lembrar neste aparelho"; migração automática do formato antigo | `seguranca.test.ts` (6); navegador: formato antigo regravado sem texto claro; sem senha → pede ao abrir | passa |
 | SEC-02 | P2 | `package-lock.json` | `npm audit fix` sem `--force`: react-router-dom 6.28.0 → 6.30.6, vite 5.4.11 → 5.4.21, vitest 2.1.8 → 2.1.9, fflate 0.8.2 → 0.8.3 | typecheck, build, 127 testes | passa |
 
 ## Não executadas (exigem decisão ou dado seu)
-- **S-01** (credenciais da nuvem no navegador): muda o uso da sincronização.
 - **REQ-01 / REQ-02** (coluna "Opções", nota da Rico): faltam exemplos.
 - **REQ-03** (alerta por e-mail): falta o link do gist.
 - **SEC-03** (vite/vitest *major*), **SEC-04** (CSP), **SEC-05** (visibilidade do repositório), **Q-01** (lint), **UX-01/UX-03**: baixa prioridade, ficam no plano.
@@ -22,3 +22,4 @@ Regras seguidas: nenhum dado existente apagado ou sobrescrito; nenhuma funcional
 ## Efeito nos seus dados
 - Proventos automáticos que tinham sido estornados por recálculo e não recriados (A-04) **voltam sozinhos** na próxima atualização do painel, com o motivo registrado na auditoria interna.
 - Nenhum lançamento seu é alterado; o livro continua só de inclusão.
+- Nuvem (S-01): na primeira abertura depois da atualização, a configuração antiga é regravada cifrada e a senha continua lembrada (você não precisa redigitar). Para mais segurança, desmarque "Lembrar a senha neste aparelho" em Dados & integrações: a senha passa a ser pedida a cada abertura.
