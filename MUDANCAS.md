@@ -181,6 +181,14 @@ Armazenamento e cálculo já usavam a quantidade exata (decimal); a mudança é 
 | Robô | — | Série mensal da taxa real da NTN-B (~10 anos) desde 2004, para o "IPCA+ do mesmo período" | Tesouro Transparente |
 | Alerta diário | — | Com a nuvem ativa, o painel grava num gist secreto só ticker, status, sinais e preços de referência (sem quantidades, sem valores da carteira); o "Radar da Carteira — Resumo Diário" lê esse arquivo e avisa por e-mail quando houver VENDER | Repositório é público: nada pessoal vai para ele |
 
+## Central de aportes: minha escolha e rendimento por nível
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Central de aportes → **Minha escolha de aporte** | Só a sugestão (com filtro de elegíveis) | Você escolhe os ativos e informa valor ou quantidade; o painel calcula quantidade, custo, renda estimada, rendimento do ativo/classe/setor/segmento, total vs. disponível, impacto na alocação e no YoC, e avisa (Aguardar, teto, watchlist, venda). "Copiar a sugestão" para partir dela. Registro com confirmação | A decisão é sua; avisos seguem as regras já aprovadas |
+| Central de aportes → **Rendimento da carteira** | — | Por Carteira, Classe, Setor, Segmento e Ativo: peso, custo, valor atual, valorização, proventos recebidos, retorno total, proventos 12m, DY e YoC; destaca os grupos dos ativos do aporte | Retorno total = valorização + vendas + proventos sobre o total comprado |
+| Robô | — | Classificação setorial oficial da B3 (Setor / Subsetor / Segmento) para as ações | B3 — dados de empresas listadas |
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

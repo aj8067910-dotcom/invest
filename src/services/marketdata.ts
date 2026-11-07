@@ -93,6 +93,7 @@ export async function applyMarketData(): Promise<MarketReport> {
     series: m.series || {},
     ntnb: m.ntnb || null,
     segments: m.segments || {},
+    classification: m.classification || {},
     stockEvents: m.stockEvents || {},
     sources: m.sources || {},
     errors: m.errors || [],

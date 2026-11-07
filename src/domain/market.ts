@@ -81,6 +81,7 @@ export interface MarketData {
   series: { cdi?: [string, number][]; ipca?: [string, number][]; ntnb?: [string, number][] };
   ntnb: { rate: number; maturity: string; date: string; source: string } | null;
   segments: Record<string, string>;
+  classification?: Record<string, { setor: string; subsetor: string | null; segmento: string | null; source: string }>;
   stockEvents: Record<string, { label: string; factor: number; dataCom: string | null; approvedOn: string | null; source: string; collectedAt: string }[]>;
   sources: Record<string, string>;
   errors: string[];

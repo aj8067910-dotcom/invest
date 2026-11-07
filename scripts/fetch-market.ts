@@ -30,6 +30,7 @@ const out: any = {
   series: {},
   ntnb: null,
   segments: {},
+  classification: {},
   sources: {
     quotes: 'B3 — COTAHIST (fechamento oficial); fallback Yahoo Finance',
     calendar: 'B3 — proventos em dinheiro (listados); fallback Yahoo Finance (data-com = pregão anterior à data-ex)',
@@ -96,6 +97,16 @@ for (const t of stocks) {
     if (!d) throw new Error('resposta vazia');
     if (d.codeCVM) codeCVM[t] = String(d.codeCVM);
     if (d.segment && !fii) out.segments[t] = d.segment;
+    // classificação setorial oficial da B3: "Setor / Subsetor / Segmento"
+    if (!fii && d.codeCVM) {
+      try {
+        const det = await getJson(`https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetDetail/${b64({ codeCVM: String(d.codeCVM), language: 'pt-br' })}`);
+        const [setor, subsetor, segmento] = String(det?.industryClassification || '').split('/').map((x: string) => x.trim());
+        if (setor) out.classification[t] = { setor, subsetor: subsetor || null, segmento: segmento || null, source: 'B3 — classificação setorial' };
+      } catch (e: any) {
+        if (prev.classification?.[t]) out.classification[t] = prev.classification[t];
+      }
+    }
     const suffix = isinSuffix(t);
     const mine = (isin: string) => !suffix || String(isin || '').includes(code4(t) + suffix);
     const items: CalendarItem[] = (d.cashDividends || [])
