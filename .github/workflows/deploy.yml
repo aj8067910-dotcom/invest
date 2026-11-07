@@ -32,6 +32,10 @@ jobs:
       - name: Coletar dados de mercado (B3, CVM, Banco Central, Tesouro; Yahoo como fallback)
         run: npx vite-node scripts/fetch-market.ts
         continue-on-error: true
+      # se o robô falhar por completo, publica de novo os últimos dados válidos em vez de um site sem dados (achado D-02)
+      - name: Garantir market-data.json
+        run: test -s public/market-data.json || curl -fsSL "https://aj8067910-dotcom.github.io/invest/market-data.json" -o public/market-data.json || echo "sem dados anteriores"
+
       - run: npm run build
       - name: Publicar dist/ no branch gh-pages
         uses: peaceiris/actions-gh-pages@v4

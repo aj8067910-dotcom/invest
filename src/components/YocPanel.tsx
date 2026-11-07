@@ -4,7 +4,7 @@ import { useDerived } from '../store/derived';
 import { Card, DataTag, Empty, Stat } from './ui';
 import { AssetLink, ChartTip } from './common';
 import { brl, brlShort, dateBR, monthBR, pct, priceFmt, qtyFmt } from '../domain/format';
-import { yocHistory } from '../domain/calc/yoc';
+import { realYield, yocHistory } from '../domain/calc/yoc';
 import { addMonths } from '../domain/util';
 
 const PERIODS = [
@@ -23,6 +23,8 @@ export function YocPanel() {
   const hist = useMemo(() => yocHistory(d.assets, d.allTransactions, d.asOf, assetId || undefined), [d.assets, d.allTransactions, d.asOf, assetId]);
   const from = period === 'all' ? '' : addMonths(d.asOf, -Number(period)).slice(0, 7);
   const shown = hist.filter((p) => p.month > from);
+  const ry = useMemo(() => realYield(d.assets, d.allTransactions, d.asOf), [d.assets, d.allTransactions, d.asOf]);
+  const ryBy = new Map(ry.byAsset.map((x) => [x.assetId, x]));
   const sel = assetId ? y.rows.find((r) => r.asset.id === assetId) : null;
 
   return (
@@ -34,6 +36,7 @@ export function YocPanel() {
         <Stat label="DY atual de mercado" value={pct(y.dyMarket, 2)} sub="projetado ÷ valor de mercado" tag={<DataTag kind="projecao" />} />
         <Stat label="Yield on Cost da carteira" value={pct(y.yoc, 2)} sub={`projetado ÷ custo de ${brl(y.cost)}`} tone="pos" tag={<DataTag kind="projecao" />} />
         <Stat label="YoC dos ativos pagadores" value={pct(y.yocIncomeAssets, 2)} sub={`sem Tesouro, cripto e ETFs que não distribuem · custo ${brl(y.incomeCost)}`} />
+        <Stat label="DY médio real" value={pct(ry.portfolio, 2)} sub={`ao ano · recebido ÷ (capital × tempo em carteira) · só pagadores ${pct(ry.payers, 2)}`} tone="pos" tag={<DataTag kind="real" />} />
         <Stat label="Total recebido" value={brl(y.received)} sub={`em ${y.monthsSinceStart} meses · 12m ${brl(y.received12m)}`} tone="pos" tag={<DataTag kind="real" />} />
         <Stat label="Média mensal recebida" value={brl(y.avgMonthly12m)} sub={`12m ÷ 12 · desde o início ${brl(y.avgMonthlySinceStart)}`} tag={<DataTag kind="real" />} />
         <Stat label="Projeção anual" value={brl(y.projectedAnnual)} sub={`${brl(y.projectedMonthly)}/mês equivalente · não é receita realizada`} tone="warn" tag={<DataTag kind="projecao" />} />
@@ -76,7 +79,7 @@ export function YocPanel() {
           <thead>
             <tr>
               <th>Ativo</th><th className="num">Qtd</th><th className="num">Preço médio</th><th className="num">Custo de aquisição</th><th className="num">Valor de mercado</th>
-              <th className="num">DY mercado</th><th className="num">YoC</th><th className="num">Projeção anual</th><th className="num">Recebido total</th><th className="num">Recebido 12m</th><th className="num">YoC realizado 12m</th><th>1ª compra</th>
+              <th className="num">DY mercado</th><th className="num">YoC</th><th className="num">Projeção anual</th><th className="num">Recebido total</th><th className="num">Recebido 12m</th><th className="num">YoC realizado 12m</th><th className="num" title="Proventos recebidos ÷ (custo × anos em carteira), com as datas reais de compra e venda">DY médio real</th><th>1ª compra</th>
             </tr>
           </thead>
           <tbody>
@@ -93,6 +96,7 @@ export function YocPanel() {
                 <td className="num">{brl(r.received)}</td>
                 <td className="num">{brl(r.received12m)}</td>
                 <td className="num">{pct(r.yocRealized12m, 2)}</td>
+                <td className="num" title={ryBy.get(r.asset.id) ? `capital médio ${brl(ryBy.get(r.asset.id)!.avgCapital)} por ${ryBy.get(r.asset.id)!.years.toFixed(1).replace('.', ',')} ano(s)` : ''}>{pct(ryBy.get(r.asset.id)?.yieldPct, 2)}</td>
                 <td className="dim" style={{ fontSize: 12 }}>{r.firstBuy ? `${dateBR(r.firstBuy)} · ${r.buys} compra(s)` : '—'}</td>
               </tr>
             ))}
@@ -100,7 +104,7 @@ export function YocPanel() {
           <tfoot>
             <tr>
               <th>Carteira</th><th></th><th></th><th className="num">{brl(y.cost)}</th><th className="num">{brl(y.marketValue)}</th>
-              <th className="num">{pct(y.dyMarket, 2)}</th><th className="num">{pct(y.yoc, 2)}</th><th className="num">{brl(y.projectedAnnual)}</th><th className="num">{brl(y.received)}</th><th className="num">{brl(y.received12m)}</th><th></th><th></th>
+              <th className="num">{pct(y.dyMarket, 2)}</th><th className="num">{pct(y.yoc, 2)}</th><th className="num">{brl(y.projectedAnnual)}</th><th className="num">{brl(y.received)}</th><th className="num">{brl(y.received12m)}</th><th></th><th className="num">{pct(ry.portfolio, 2)}</th><th></th>
             </tr>
           </tfoot>
         </table>

@@ -49,7 +49,8 @@ const err = (m: string) => {
 async function get(url: string, tries = 3): Promise<Response> {
   for (let i = 1; ; i++) {
     try {
-      const r = await fetch(url, { headers: UA });
+      // tempo-limite por requisição: uma fonte travada não segura o robô inteiro (achado D-01)
+      const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(90000) });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r;
     } catch (e) {

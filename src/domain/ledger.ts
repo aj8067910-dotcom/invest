@@ -111,3 +111,27 @@ export function migrateTransactions(txs: Transaction[], assets: Asset[], refinge
   const fixed = new Map(assignFingerprints(missing, counts).map((t) => [t.id, t.fingerprint]));
   return norm.map((t) => (t.fingerprint ? t : { ...t, fingerprint: fixed.get(t.id) }));
 }
+
+/**
+ * Impressões digitais que contam para DUPLICIDADE: só as de lançamentos válidos (estornados não contam).
+ * Achado A-02/A-04 da auditoria: comparar com estornados bloqueava reimportações e a recriação de proventos.
+ */
+export function liveFingerprints(txs: Transaction[], alsoIgnore: Set<string> = new Set()): Set<string> {
+  return new Set(activeTransactions(txs).filter((t) => !alsoIgnore.has(t.id)).map((t) => t.fingerprint).filter(Boolean) as string[]);
+}
+
+/** Garante impressão digital única no livro inteiro (inclusive estornados), numerando #2, #3… */
+export function uniqueFingerprints<T extends Transaction>(fresh: T[], all: Transaction[]): T[] {
+  const used = new Set(all.map((t) => t.fingerprint).filter(Boolean) as string[]);
+  return fresh.map((t) => {
+    if (!t.fingerprint || !used.has(t.fingerprint)) {
+      if (t.fingerprint) used.add(t.fingerprint);
+      return t;
+    }
+    const base = t.fingerprint.split('#')[0];
+    let k = 2;
+    while (used.has(`${base}#${k}`)) k++;
+    used.add(`${base}#${k}`);
+    return { ...t, fingerprint: `${base}#${k}` };
+  });
+}

@@ -82,8 +82,12 @@ export default function Dashboard() {
       )}
       <div className="grid g4">
         <Stat label="Patrimônio" value={brlShort(d.totals.marketValue)} sub={d.totals.missingQuotes.length ? `${d.totals.missingQuotes.length} ativo(s) a preço de custo` : 'a valor de mercado (sem reserva de emergência)'} tone="info" seal={{ source: 'Livro + cotações B3', at: robotAt }} />
-        <Stat label="Capital aportado" value={brlShort(d.totals.netContributed)} sub={`aportes externos − retiradas · reinvestido ${brlShort(d.totals.reinvestedIncome)} não conta`} seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
-        <Stat label="Resultado acumulado" value={brl(d.totals.accumulatedResult)} sub="patrimônio + retiradas − aportes externos" tone={d.totals.accumulatedResult >= 0 ? 'pos' : 'neg'} seal={{ source: 'Livro + cotações B3', at: robotAt }} />
+        {d.totals.deposits > 0 ? (
+          <Stat label="Capital aportado" value={brlShort(d.totals.netContributed)} sub={`aportes externos − retiradas · reinvestido ${brlShort(d.totals.reinvestedIncome)} não conta · caixa estimado ${brlShort(d.totals.cash)}`} seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
+        ) : (
+          <Stat label="Capital investido" value={brlShort(d.totals.netInvested)} sub="compras − vendas (nenhum aporte lançado na Central de Operações)" seal={{ source: 'Livro de lançamentos', at: ledgerAt }} />
+        )}
+        <Stat label="Resultado acumulado" value={brl(d.totals.accumulatedResult)} sub="valorização + resultado de vendas + proventos recebidos" tone={d.totals.accumulatedResult >= 0 ? 'pos' : 'neg'} seal={{ source: 'Livro + cotações B3', at: robotAt }} />
         <Stat
           label="Rentabilidade"
           value={R.twr === null ? '—' : `${R.twr >= 0 ? '+' : ''}${pct(R.twr * 100, 2)}`}

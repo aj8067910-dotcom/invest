@@ -3,7 +3,7 @@ import { persist, createJSONStorage, type StateStorage } from 'zustand/middlewar
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import type { Asset, AuditEntry, Distribution, Fundamentals, ImportBatch, Macro, Settings, Snapshot, SyncLogEntry, Transaction } from '../domain/types';
 import { TX_LABEL } from '../domain/types';
-import { assignFingerprints, fingerprintBase, migrateTransactions, normalizeTx } from '../domain/ledger';
+import { activeTransactions, assignFingerprints, fingerprintBase, liveFingerprints, migrateTransactions, normalizeTx, uniqueFingerprints } from '../domain/ledger';
 import type { AutoPlan, Conciliation } from '../domain/calc/proventos';
 import { defaultMacro, defaultSettings, seedAssets } from '../domain/seed';
 import { todayISO, uid } from '../domain/util';
@@ -192,9 +192,10 @@ export const useStore = create<State>()(
         const st = get();
         const tx = normalizeTx({ ...t, id: t.id || uid() } as Transaction, st.assets);
         const base = fingerprintBase(tx);
-        const same = st.transactions.filter((x) => (x.fingerprint || '').split('#')[0] === base);
+        // duplicidade só contra lançamentos válidos; a numeração (#n) considera o livro inteiro
+        const same = activeTransactions(st.transactions).filter((x) => (x.fingerprint || '').split('#')[0] === base);
         if (same.length && !opts.allowDuplicate) return { ok: false, duplicateOf: same[0] };
-        const final = { ...tx, fingerprint: same.length ? `${base}#${same.length + 1}` : base };
+        const [final] = uniqueFingerprints([{ ...tx, fingerprint: base }], st.transactions);
         set((s) => ({ transactions: [...s.transactions, final], audit: opts.quiet ? s.audit : addAudit(s.audit, { action: 'criar', txId: final.id, summary: describe(final, s.assets), after: final }) }));
         return { ok: true, id: final.id };
       },
@@ -245,8 +246,9 @@ export const useStore = create<State>()(
             const t = s.transactions.find((x) => x.id === r.id)!;
             return reversal(t, r.reason, by);
           });
-          const have = new Set(s.transactions.map((t) => t.fingerprint));
-          const fresh = assignFingerprints(plan.create.map((t) => normalizeTx(t, s.assets))).filter((t) => !have.has(t.fingerprint));
+          // os lançamentos estornados neste mesmo plano não bloqueiam a recriação (achado A-04)
+          const have = liveFingerprints(s.transactions, new Set(plan.reverse.map((r) => r.id)));
+          const fresh = uniqueFingerprints(assignFingerprints(plan.create.map((t) => normalizeTx(t, s.assets))).filter((t) => !have.has(t.fingerprint || '')), s.transactions);
           return {
             transactions: [...s.transactions, ...revs, ...fresh],
             audit: addAudit(s.audit, { action: 'provento_auto', summary: `Proventos automáticos pela data-com: ${fresh.length} lançado(s), ${revs.length} estornado(s) por recálculo/retificação.` }),
@@ -261,9 +263,9 @@ export const useStore = create<State>()(
           if (conc.length) s = { ...s, conciliations: [...s.conciliations, ...conc] };
           const tickers = new Set(s.assets.map((a) => a.ticker));
           const assets = [...s.assets, ...newAssets.filter((a) => !tickers.has(a.ticker))];
-          const have = new Set(s.transactions.map((t) => t.fingerprint));
-          // reenvio/retomada: o que já foi gravado é ignorado pela impressão digital
-          const fresh = txs.filter((t) => !have.has(t.fingerprint)).map((t) => normalizeTx({ ...t, importId }, assets));
+          const have = liveFingerprints(s.transactions);
+          // reenvio/retomada: o que já está gravado e válido é ignorado; o que foi estornado pode voltar (achado A-02)
+          const fresh = uniqueFingerprints(txs.filter((t) => !have.has(t.fingerprint || '')).map((t) => normalizeTx({ ...t, importId }, assets)), s.transactions);
           added = fresh.length;
           return {
             assets,

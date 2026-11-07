@@ -149,10 +149,18 @@ export function yocHistory(assets: Asset[], allTxs: Transaction[], asOf = todayI
   const out: YocPoint[] = [];
   const inc = txs.filter((t) => INCOME_TX.includes(t.type) && !(t.auto && !t.payDate) && (!assetId || t.assetId === assetId));
   const sel = assets.filter((a) => !a.isReserve && (!assetId || a.id === assetId));
+  // o livro já traz o custo após cada lançamento, em ordem cronológica: basta ler o último até o fim de cada mês
+  // (antes recalculava a carteira inteira a cada mês: 1,5 s com 10 mil operações — achado PERF-01)
+  const pos = computePositions(assets, txs, asOf);
+  const rows = sel.map((a) => pos[a.id]?.ledger || []);
+  const ptr = rows.map(() => -1);
   for (let m = first.slice(0, 7); m <= asOf.slice(0, 7); m = addMonths(m + '-15', 1).slice(0, 7)) {
     const end = endOfMonth(m) > asOf ? asOf : endOfMonth(m);
-    const pos = computePositions(assets, txs.filter((t) => t.date <= end), end); // só o que existia até o fim do mês
-    const cost = sel.reduce((x, a) => (isHeld(pos[a.id]) ? x.plus(D(pos[a.id].costBasis)) : x), ZERO);
+    let cost = ZERO;
+    rows.forEach((rs, i) => {
+      while (ptr[i] + 1 < rs.length && rs[ptr[i] + 1].tx.date <= end) ptr[i]++;
+      if (ptr[i] >= 0) cost = cost.plus(D(rs[ptr[i]].costAfter));
+    });
     const from = addMonths(end, -12);
     const r12 = inc.filter((t) => t.date > from && t.date <= end).reduce((x, t) => x.plus(D(t.amount)), ZERO);
     const rm = inc.filter((t) => t.date.slice(0, 7) === m && t.date <= end).reduce((x, t) => x.plus(D(t.amount)), ZERO);
@@ -318,4 +326,54 @@ export function snowball(a: Asset, s: Settings, held: number, monthlyContributio
     missing, costMissing: missing === null ? null : N(D(missing).times(price)),
     progress: magic ? Math.min(100, (have / magic) * 100) : null, monthsWithContribution: months,
   };
+}
+
+// ───────────── DY médio real (rendimento efetivo sobre o capital no tempo) ─────────────
+
+export interface RealYield {
+  portfolio: number | null; // % ao ano, todos os ativos (exceto reserva)
+  payers: number | null; // % ao ano, só ativos que pagaram proventos no período
+  income: number;
+  capitalYears: number; // Σ custo × anos em carteira
+  byAsset: { assetId: string; ticker: string; income: number; capitalYears: number; avgCapital: number; years: number; yieldPct: number | null }[];
+}
+
+/**
+ * DY médio real (anualizado) = proventos efetivamente RECEBIDOS ÷ Σ (custo de aquisição × tempo em carteira).
+ * - Usa as datas reais de cada compra e venda: o custo de cada intervalo vem do livro (PM da Receita).
+ * - Compras adicionais aumentam o capital a partir da data; vendas parciais reduzem a partir da data.
+ * - Proventos provisionados e projetados não entram. O denominador é o capital investido, nunca o patrimônio.
+ * - Equivale a uma média ponderada pelo tempo do "yield sobre custo" efetivamente obtido.
+ */
+export function realYield(assets: Asset[], allTxs: Transaction[], asOf = todayISO()): RealYield {
+  const txs = activeTransactions(allTxs);
+  const pos = computePositions(assets, txs, asOf);
+  const DAY = 86400000;
+  const t = (iso: string) => new Date(iso.slice(0, 10) + 'T12:00:00Z').getTime();
+  const out: RealYield['byAsset'] = [];
+  let inc = ZERO, cy = ZERO, incP = ZERO, cyP = ZERO;
+  for (const a of assets) {
+    if (a.isReserve) continue;
+    const rows = (pos[a.id]?.ledger || []).filter((r) => r.tx.date <= asOf);
+    if (!rows.length) continue;
+    let capYears = ZERO;
+    let start: number | null = null;
+    for (let i = 0; i < rows.length; i++) {
+      const end = i + 1 < rows.length ? t(rows[i + 1].tx.date) : t(asOf);
+      const cost = D(rows[i].costAfter);
+      if (cost.greaterThan(0)) {
+        capYears = capYears.plus(cost.times(Math.max(0, end - t(rows[i].tx.date)) / DAY / 365));
+        start ??= t(rows[i].tx.date);
+      }
+    }
+    const income = txs.filter((x) => x.assetId === a.id && INCOME_TX.includes(x.type) && isReceived(x, asOf)).reduce((s, x) => s.plus(D(x.amount)), ZERO);
+    if (capYears.isZero() && income.isZero()) continue;
+    const years = start === null ? 0 : (t(asOf) - start) / DAY / 365;
+    out.push({ assetId: a.id, ticker: a.ticker, income: N(income), capitalYears: N(capYears), avgCapital: years > 0 ? N(capYears.dividedBy(years)) : 0, years, yieldPct: capYears.greaterThan(0) ? N(income.dividedBy(capYears).times(100)) : null });
+    inc = inc.plus(income);
+    cy = cy.plus(capYears);
+    if (income.greaterThan(0)) { incP = incP.plus(income); cyP = cyP.plus(capYears); }
+  }
+  out.sort((x, y) => (y.yieldPct ?? -1) - (x.yieldPct ?? -1));
+  return { portfolio: cy.greaterThan(0) ? N(inc.dividedBy(cy).times(100)) : null, payers: cyP.greaterThan(0) ? N(incP.dividedBy(cyP).times(100)) : null, income: N(inc), capitalYears: N(cy), byAsset: out };
 }

@@ -3,7 +3,7 @@
 import type { Asset, AssetClass, OpCategory, Transaction, TxType, RfMovement } from './types';
 import { OP_CATEGORY_LABEL, TX_LABEL } from './types';
 import { parseDate, parseNum, uid } from './util';
-import { assignFingerprints, categoryOf, txOrder } from './ledger';
+import { activeTransactions, assignFingerprints, categoryOf, txOrder } from './ledger';
 import { computePosition } from './calc/positions';
 import { makeAsset } from './seed';
 
@@ -577,7 +577,8 @@ export function buildRecords(inp: BuildInput): BuildResult {
   }
 
   // conciliação: provento do extrato que corresponde a um lançamento AUTOMÁTICO (mesmo ativo, tipo e data de pagamento)
-  const autos = inp.existing.filter((t) => t.auto);
+  const live = activeTransactions(inp.existing); // estornados não contam para conciliação nem duplicidade (achado A-02)
+  const autos = live.filter((t) => t.auto);
   for (const r of records) {
     if (!r.tx || !(['dividendo', 'jcp', 'rendimento', 'amortizacao', 'outro_provento'] as TxType[]).includes(r.tx.type)) continue;
     const m = autos.find((t) => t.assetId === r.tx!.assetId && (t.type === r.tx!.type || r.tx!.type === 'outro_provento') && (t.payDate || t.date) === r.tx!.date);
@@ -589,8 +590,8 @@ export function buildRecords(inp: BuildInput): BuildResult {
   }
 
   // duplicidades: impressão digital exata e semelhança forte com o que já existe
-  const existingFp = new Set(inp.existing.map((t) => t.fingerprint));
-  const existingLoose = new Set(inp.existing.map(LOOSE));
+  const existingFp = new Set(live.map((t) => t.fingerprint));
+  const existingLoose = new Set(live.map(LOOSE));
   const withTx = records.filter((r) => r.tx);
   const fps = assignFingerprints(withTx.map((r) => r.tx!));
   withTx.forEach((r, i) => {

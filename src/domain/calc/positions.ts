@@ -440,7 +440,8 @@ export interface PortfolioTotals {
   deposits: number; // aportes externos (bruto)
   withdrawals: number;
   netContributed: number; // capital aportado = aportes − retiradas (reinvestimento não conta)
-  accumulatedResult: number; // patrimônio + retiradas − aportes
+  netInvested: number; // compras − vendas (capital líquido aplicado nos ativos; usado quando não há aportes lançados)
+  accumulatedResult: number; // resultado econômico: valorização + resultado de vendas + proventos recebidos
   reinvestedIncome: number;
   cash: number;
 }
@@ -452,6 +453,9 @@ export function portfolioTotals(assets: Asset[], positions: Record<string, Posit
   let prov = ZERO;
   let real = ZERO;
   let unr = ZERO;
+  let result = ZERO;
+  let bought = ZERO;
+  let sold = ZERO;
   const missingQuotes: string[] = [];
   for (const a of assets) {
     const p = positions[a.id];
@@ -459,6 +463,12 @@ export function portfolioTotals(assets: Asset[], positions: Record<string, Posit
     inc = inc.plus(p.income);
     prov = prov.plus(p.incomeProvisioned);
     real = real.plus(p.realized);
+    // resultado econômico de toda posição (inclusive encerradas): não depende de aportes lançados nem do caixa
+    if (!a.isReserve) {
+      result = result.plus(p.totalReturn);
+      bought = bought.plus(p.totalBought);
+      sold = sold.plus(p.totalSold);
+    }
     if (!isHeld(p) || a.isReserve) continue;
     mv = mv.plus(p.marketValue);
     cb = cb.plus(p.costBasis);
@@ -485,7 +495,10 @@ export function portfolioTotals(assets: Asset[], positions: Record<string, Posit
     deposits: N(deposits),
     withdrawals: N(withdrawals),
     netContributed: N(deposits.minus(withdrawals)),
-    accumulatedResult: N(mv.plus(withdrawals).minus(deposits)),
+    netInvested: N(bought.minus(sold)),
+    // Antes: patrimônio + retiradas − aportes — ignorava o caixa (proventos e vendas não reinvestidos) e,
+    // sem aportes lançados, mostrava o patrimônio inteiro como resultado (achado A-01 da auditoria).
+    accumulatedResult: N(result),
     reinvestedIncome: N(reinvestedIncome),
     cash: N(cash),
   };
