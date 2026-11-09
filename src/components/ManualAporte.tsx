@@ -6,12 +6,12 @@ import { PriorityBadge } from './common';
 import { brl, pct, priceFmt, qtyFmt, signedPct } from '../domain/format';
 import { projectedPerUnit, unitStep } from '../domain/calc/yoc';
 import { capOf, weights } from '../domain/calc/concentration';
-import { breakdown, classify } from '../domain/calc/breakdown';
+import { classify } from '../domain/calc/breakdown';
 import { CLASS_LABEL, type AssetClass } from '../domain/types';
 import { isNum, uid } from '../domain/util';
 import { toast } from './toast';
 
-export interface ManualLine { id: string; assetId: string; mode: 'valor' | 'qtd'; value: number | null; qty: number | null }
+export interface ManualLine { id: string; assetId: string; mode: 'valor' | 'qtd'; value: number | null; qty: number | null; price?: number | null /* preço de compra informado; vazio = cotação */ }
 const KEY = 'radar-aporte-manual';
 const load = (): ManualLine[] => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
 
@@ -22,19 +22,14 @@ export function ManualAporte({ amount, date, suggestion, onChange }: { amount: n
   const [lines, setLines] = useState<ManualLine[]>(load);
   const [confirm, setConfirm] = useState(false);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(lines)); } catch { /* sem armazenamento */ } }, [lines]);
-  const options = useMemo(() => d.assets.filter((a) => !a.isReserve && isNum(a.quote.price) && a.quote.price > 0).sort((x, y) => x.ticker.localeCompare(y.ticker)), [d.assets]);
+  const options = useMemo(() => d.assets.filter((a) => !a.isReserve).sort((x, y) => x.ticker.localeCompare(y.ticker)), [d.assets]);
   const byId = useMemo(() => new Map(d.assets.map((a) => [a.id, a])), [d.assets]);
-  const ret = useMemo(() => ({
-    ativo: new Map(breakdown('ativo', d.assets, d.positions, d.yoc, d.market).map((r) => [r.key, r])),
-    classe: new Map(breakdown('classe', d.assets, d.positions, d.yoc, d.market).map((r) => [r.key, r])),
-    setor: new Map(breakdown('setor', d.assets, d.positions, d.yoc, d.market).map((r) => [r.key, r])),
-    segmento: new Map(breakdown('segmento', d.assets, d.positions, d.yoc, d.market).map((r) => [r.key, r])),
-  }), [d.assets, d.positions, d.yoc, d.market]);
 
   const calc = lines.map((l) => {
     const a = byId.get(l.assetId);
-    if (!a || !isNum(a.quote.price)) return { l, a, qty: 0, cost: 0, income: 0, warns: [] as string[] };
-    const price = a.quote.price;
+    const quote = a && isNum(a.quote.price) && a.quote.price > 0 ? a.quote.price : null;
+    const price = isNum(l.price) && l.price > 0 ? l.price : quote;
+    if (!a || !price) return { l, a, qty: 0, cost: 0, income: 0, warns: a ? ['informe o preço de compra (sem cotação)'] : ([] as string[]), price: null, quote, r: undefined };
     const step = unitStep(a);
     const qty = l.mode === 'qtd' ? l.qty ?? 0 : isNum(l.value) && l.value > 0 ? Math.floor(l.value / price / step + 1e-9) * step : 0;
     const cost = qty * price;
@@ -49,7 +44,7 @@ export function ManualAporte({ amount, date, suggestion, onChange }: { amount: n
     const w = weights(d.assets, d.positions, a, cost);
     if (cost > 0 && w.assetPct > cap.pct && d.alloc.total > d.settings.profile.monthlyContribution * 10) warns.push(`passa do teto de ${pct(cap.pct, 0)} na carteira (ficaria com ${pct(w.assetPct, 1)})`);
     if (l.mode === 'valor' && isNum(l.value) && l.value > 0 && qty === 0) warns.push('valor menor que 1 unidade');
-    return { l, a, qty, cost, income, warns, price, r };
+    return { l, a, qty, cost, income, warns, price, quote, r };
   });
   const total = calc.reduce((s, x) => s + x.cost, 0);
   const investable = Math.max(0, amount - d.settings.allocator.reserve);
@@ -86,16 +81,11 @@ export function ManualAporte({ amount, date, suggestion, onChange }: { amount: n
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>
-                <tr><th>Ativo</th><th>Informar</th><th className="num">Valor ou quantidade</th><th className="num">Cotação</th><th className="num">Qtd</th><th className="num">Custo</th><th className="num">Renda estimada/ano</th><th>Rendimento: ativo · classe · setor · segmento</th><th>Classificação</th><th></th></tr>
+                <tr><th>Ativo</th><th>Informar</th><th className="num">Valor ou quantidade</th><th className="num" title="Vem com a cotação; altere para o preço que você vai pagar na ordem">Preço de compra</th><th className="num">Qtd</th><th className="num">Custo</th><th className="num">Renda estimada/ano</th><th>Classificação</th><th></th></tr>
               </thead>
               <tbody>
                 {calc.map((x) => {
                   const c = x.a ? classify(x.a, d.market) : null;
-                  const rA = x.a ? ret.ativo.get(x.a.ticker) : undefined;
-                  const rC = x.a ? ret.classe.get(CLASS_LABEL[x.a.class]) : undefined;
-                  const rS = c ? ret.setor.get(c.setor) : undefined;
-                  const rG = c ? ret.segmento.get(c.segmento) : undefined;
-                  const cell = (r: typeof rA, label: string) => <span title={label} className={(r?.totalReturnPct ?? 0) >= 0 ? 'pos' : 'neg'}>{r ? signedPct(r.totalReturnPct) : <span className="dim">—</span>}</span>;
                   return (
                     <tr key={x.l.id}>
                       <td>
@@ -113,11 +103,16 @@ export function ManualAporte({ amount, date, suggestion, onChange }: { amount: n
                       <td className="num" style={{ minWidth: 120 }}>
                         {x.l.mode === 'valor' ? <NumInput value={x.l.value} onChange={(v) => set(x.l.id, { value: v })} /> : <NumInput value={x.l.qty} onChange={(v) => set(x.l.id, { qty: v })} />}
                       </td>
-                      <td className="num">{x.a ? priceFmt(x.price, x.a.class) : '—'}</td>
+                      <td className="num" style={{ minWidth: 130 }}>
+                        <NumInput value={x.l.price ?? null} placeholder={x.quote ? String(x.quote).replace('.', ',') : 'preço'} onChange={(v) => set(x.l.id, { price: v })} />
+                        <div className="dim" style={{ fontSize: 11 }}>
+                          {x.quote ? <>cotação {priceFmt(x.quote, x.a?.class)}</> : 'sem cotação'}
+                          {isNum(x.l.price) && x.l.price > 0 && x.quote ? <> · <span className={x.l.price <= x.quote ? 'pos' : 'warn-t'}>{signedPct((x.l.price / x.quote - 1) * 100)}</span> · <button className="btn ghost sm" style={{ padding: '0 4px' }} onClick={() => set(x.l.id, { price: null })}>usar cotação</button></> : null}
+                        </div>
+                      </td>
                       <td className="num">{x.a ? qtyFmt(x.qty, x.a.class) : '—'}</td>
                       <td className="num"><b>{brl(x.cost)}</b></td>
                       <td className="num">{x.income ? brl(x.income) : <span className="dim">—</span>}</td>
-                      <td className="nowrap" style={{ fontSize: 12.5 }}>{cell(rA, 'ativo')} · {cell(rC, 'classe')} · {cell(rS, 'setor')} · {cell(rG, 'segmento')}</td>
                       <td>
                         {x.r && <PriorityBadge p={x.r.priority} />}
                         {x.warns.map((w) => <div key={w}><Badge tone="warn" title={w}>▲ {w.length > 46 ? w.slice(0, 46) + '…' : w}</Badge></div>)}

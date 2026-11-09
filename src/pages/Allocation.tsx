@@ -7,6 +7,7 @@ import { CLASS_COLOR, ChartTip } from '../components/common';
 import { computeAllocation, economicExposure, reserveTotal } from '../domain/calc/allocation';
 import { CLASS_LABEL, EXPOSURE_LABEL } from '../domain/types';
 import { brl, pct, signedPct } from '../domain/format';
+import { ReturnsBreakdown } from '../components/ReturnsBreakdown';
 
 export default function Allocation() {
   const d = useDerived();
@@ -93,6 +94,7 @@ export default function Allocation() {
           <Stat label="Reserva" value={brl(reserveTotal(d.assets, d.positions))} sub={d.assets.filter((a) => a.isReserve).map((a) => a.ticker).join(', ') || 'nenhum ativo marcado'} />
         </Card>
       </div>
+      <ReturnsBreakdown />
       <Disclaimer />
     </div>
   );

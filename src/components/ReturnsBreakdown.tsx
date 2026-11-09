@@ -16,7 +16,7 @@ export function ReturnsBreakdown({ highlight }: { highlight?: string[] }) {
   return (
     <Card
       title="Rendimento da carteira"
-      sub="Retorno total = valorização a mercado + resultado de vendas + proventos recebidos, sobre o total comprado. Setor e segmento das ações pela classificação oficial da B3; FIIs pelo segmento de atuação. Linhas em destaque contêm os ativos escolhidos para o aporte."
+      sub="Retorno total = valorização a mercado + resultado de vendas + proventos recebidos, sobre o total comprado. Setor e segmento das ações pela classificação oficial da B3; FIIs pelo segmento de atuação."
       right={
         <div className="seg" style={{ flexWrap: 'wrap' }}>
           {LEVELS.map((l) => <button key={l} className={level === l ? 'on' : ''} onClick={() => setLevel(l)}>{LEVEL_LABEL[l]}</button>)}

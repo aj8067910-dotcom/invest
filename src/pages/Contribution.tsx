@@ -10,7 +10,6 @@ import { todayISO } from '../domain/util';
 import { toast } from '../components/toast';
 import { IncomeTools } from '../components/IncomeTools';
 import { ManualAporte } from '../components/ManualAporte';
-import { ReturnsBreakdown } from '../components/ReturnsBreakdown';
 
 export default function Contribution() {
   const d = useDerived();
@@ -21,7 +20,6 @@ export default function Contribution() {
   const [eligible, setEligible] = useState<Set<string> | null>(null);
   const [showElig, setShowElig] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [chosen, setChosen] = useState<string[]>([]);
   const setAl = (p: Partial<typeof al>) => updateSettings((s) => ({ ...s, allocator: { ...s.allocator, ...p } }));
 
   const plan = useMemo(
@@ -54,7 +52,7 @@ export default function Contribution() {
         <div>
           <div className="kicker">Planejamento</div>
           <h1>Central de aportes</h1>
-          <p>A sugestão distribui o valor disponível entre os ativos de maior prioridade, respeitando a régua de compra, a alocação-alvo e os limites de concentração. Em “Minha escolha de aporte” você define os ativos e valores; o rendimento da carteira, por classe, setor, segmento e ativo fica logo abaixo.</p>
+          <p>A sugestão distribui o valor disponível entre os ativos de maior prioridade, respeitando a régua de compra, a alocação-alvo e os limites de concentração. Em “Minha escolha de aporte” você define os ativos, os valores e o preço de compra de cada cota.</p>
         </div>
       </div>
       <div className="grid g2">
@@ -128,9 +126,7 @@ export default function Contribution() {
         )}
       </Card>
 
-      <ManualAporte amount={amount ?? 0} date={date} suggestion={plan.lines.map((l) => ({ assetId: l.asset.id, qty: l.qty }))} onChange={setChosen} />
-
-      <ReturnsBreakdown highlight={chosen.length ? chosen : plan.lines.map((l) => l.asset.ticker)} />
+      <ManualAporte amount={amount ?? 0} date={date} suggestion={plan.lines.map((l) => ({ assetId: l.asset.id, qty: l.qty }))} />
 
       <div className="grid g2">
         <Card title="Impacto na alocação (sugestão)">

@@ -189,6 +189,14 @@ Armazenamento e cálculo já usavam a quantidade exata (decimal); a mudança é 
 | Central de aportes → **Rendimento da carteira** | — | Por Carteira, Classe, Setor, Segmento e Ativo: peso, custo, valor atual, valorização, proventos recebidos, retorno total, proventos 12m, DY e YoC; destaca os grupos dos ativos do aporte | Retorno total = valorização + vendas + proventos sobre o total comprado |
 | Robô | — | Classificação setorial oficial da B3 (Setor / Subsetor / Segmento) para as ações | B3 — dados de empresas listadas |
 
+## Rendimento na Alocação e preço de compra editável
+
+| Módulo | Antes | Depois |
+|---|---|---|
+| Alocação | — | Card "Rendimento da carteira" (carteira, classe, setor, segmento, ativo), movido da Central de aportes |
+| Central de aportes → Minha escolha | Preço = cotação; coluna de rendimento | Coluna "Preço de compra" editável (vem com a cotação; mostra a diferença e "usar cotação"); quantidade, custo, renda e registro usam o preço informado; coluna de rendimento removida |
+| Central de aportes → Projeção de renda do aporte | Cotação fixa | "Preço de compra" editável |
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

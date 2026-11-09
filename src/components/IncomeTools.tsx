@@ -23,7 +23,10 @@ export function IncomeTools({ suggestedId }: { suggestedId?: string }) {
   useEffect(() => setDyEdit(null), [assetId]);
 
   const unit = a ? projectedPerUnit(a, d.settings, d.asOf) : null;
-  const price = a?.quote.price ?? null;
+  const [priceEdit, setPriceEdit] = useState<number | null>(null);
+  useEffect(() => setPriceEdit(null), [assetId]);
+  const quote = a?.quote.price ?? null;
+  const price = priceEdit && priceEdit > 0 ? priceEdit : quote; // preço de compra: o informado ou a cotação
   const dyHist = unit?.perUnit && price ? (unit.perUnit / price) * 100 : null;
   const dyUsed = dyEdit ?? dyHist;
   const sim = a && price ? simulateAporte({ asset: a, price, qty: mode === 'qtd' ? qty : null, value: mode === 'valor' ? value : null, dyPct: dyUsed, position: d.positions[a.id], perUnit: unit?.perUnit ?? null, summary: d.yoc, asOf: d.asOf }) : null;
@@ -82,7 +85,12 @@ export function IncomeTools({ suggestedId }: { suggestedId?: string }) {
             </div>
           </Field>
           {mode === 'valor' ? <Field label="Valor do aporte" hint="Quantidade arredondada para baixo (não passa do valor)"><NumInput value={value} onChange={setValue} /></Field> : <Field label="Quantidade"><NumInput value={qty} onChange={setQty} /></Field>}
-          <Field label="Cotação usada"><input value={price ? priceFmt(price, a?.class) : 'sem cotação'} disabled /></Field>
+          <Field label="Preço de compra" hint={quote ? `cotação ${priceFmt(quote, a?.class)}${priceEdit ? ` · ${(((priceEdit / quote) - 1) * 100).toFixed(1).replace('.', ',')}%` : ''}` : 'sem cotação: informe o preço'}>
+            <div className="row" style={{ flexWrap: 'nowrap' }}>
+              <NumInput value={priceEdit} placeholder={quote ? String(quote).replace('.', ',') : 'preço'} onChange={setPriceEdit} />
+              {priceEdit !== null && <button className="btn ghost sm" onClick={() => setPriceEdit(null)}>cotação</button>}
+            </div>
+          </Field>
           <Field label="DY usado na simulação" hint={dyHist ? `Histórico: ${pct(dyHist, 2)} (${unit?.label})` : 'Sem histórico: informe um DY'}>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <NumInput value={dyUsed === null ? null : Math.round(dyUsed * 100) / 100} suffix="%" onChange={setDyEdit} />
