@@ -253,7 +253,7 @@ try {
 
 // ───────── 5) Tesouro Nacional: PU, taxa, NTN-B de referência e PU de fim de mês ─────────
 try {
-  const txt = await (await get('https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv')).text();
+  const txt = await (await get('https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv', 5)).text(); // fonte instável a partir do GitHub: mais tentativas
   const lines = txt.split(/\r?\n/);
   const toIso = (s: string) => s.split('/').reverse().join('-');
   for (const [t, { tipo, vencimento }] of Object.entries(cfg.tesouro) as [string, any][]) {
@@ -311,6 +311,16 @@ try {
   for (const t of Object.keys(cfg.tesouro || {})) if (!out.monthEnd[t]?.length && prev.monthEnd?.[t]) out.monthEnd[t] = prev.monthEnd[t];
   out.ntnb ??= prev.ntnb ?? null;
   if (!out.series.ntnb?.length && prev.series?.ntnb) out.series.ntnb = prev.series.ntnb;
+  // sem publicação anterior com esses dados: usa o retrato salvo no repositório (market/tesouro-snapshot.json)
+  try {
+    const snap = JSON.parse(await readFile(new URL('../market/tesouro-snapshot.json', import.meta.url), 'utf8'));
+    for (const [k, v] of Object.entries(snap.tesouro || {})) out.tesouro[k] ??= { ...(v as object), fonte: `retrato de ${String(snap.geradoEm).slice(0, 10)} (Tesouro fora do ar)` };
+    for (const [k, v] of Object.entries(snap.monthEnd || {})) if (!out.monthEnd[k]?.length) out.monthEnd[k] = v;
+    out.ntnb ??= snap.ntnb ?? null;
+    if (!out.series.ntnb?.length && snap.seriesNtnb) out.series.ntnb = snap.seriesNtnb;
+  } catch {
+    /* sem retrato */
+  }
 }
 
 // ───────── 6) Banco Central: último valor e séries mensais ─────────
@@ -320,6 +330,7 @@ for (const [k, s] of Object.entries({ selic: 432, ipca12: 13522, cdi: 4389, usd:
     out.macro[k] = { value: Number(String(row.valor).replace(',', '.')), date: row.data.split('/').reverse().join('-') };
   } catch (e: any) {
     err(`Banco Central ${k}: ${e.message}`);
+    if (prev.macro?.[k]) out.macro[k] = prev.macro[k]; // mantém o último valor válido
   }
 }
 for (const [k, s] of Object.entries({ cdi: 4391, ipca: 433 })) {
