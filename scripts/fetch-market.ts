@@ -306,6 +306,11 @@ try {
   out.series.ntnb = [...byMonth.entries()].filter(([, v]) => v.best).map(([m, v]) => [m, v.best!.rate] as [string, number]).sort((x, y) => x[0].localeCompare(y[0]));
 } catch (e: any) {
   err(`Tesouro: ${e.message}`);
+  // fonte fora do ar: mantém os últimos dados válidos (PU, NTN-B, séries) em vez de publicar vazio
+  if (prev.tesouro) for (const [k, v] of Object.entries(prev.tesouro)) out.tesouro[k] ??= v;
+  for (const t of Object.keys(cfg.tesouro || {})) if (!out.monthEnd[t]?.length && prev.monthEnd?.[t]) out.monthEnd[t] = prev.monthEnd[t];
+  out.ntnb ??= prev.ntnb ?? null;
+  if (!out.series.ntnb?.length && prev.series?.ntnb) out.series.ntnb = prev.series.ntnb;
 }
 
 // ───────── 6) Banco Central: último valor e séries mensais ─────────
