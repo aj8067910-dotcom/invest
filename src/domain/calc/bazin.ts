@@ -84,6 +84,7 @@ export function dpaRefFor(a: Asset, s: Settings): DpaRef {
 export function netPerUnit(d: Distribution, a: Asset, s: Settings): Decimal {
   const v = D(d.value);
   if (d.type === 'jcp') return v.times(D(100).minus(s.tax.jcpRate)).dividedBy(100);
+  if (a.class === 'etf' && d.type !== 'amortizacao') return v.times(D(100).minus(a.etfIncomeTax ?? 15)).dividedBy(100);
   if (d.type === 'rendimento' && a.fiiTaxExempt === false) return v.times(D(100).minus(s.tax.fiiRateIfNotExempt)).dividedBy(100);
   return v;
 }

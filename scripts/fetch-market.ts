@@ -74,8 +74,9 @@ try {
 
 const stocks: string[] = cfg.b3;
 const isFii = (t: string) => /11$/.test(t) && (cfg.fiis || []).includes(t);
+const isEtfFund = (t: string) => (cfg.etfsQueDistribuem || []).includes(t); // ETF que distribui (ex.: SPYI11)
 const code4 = (t: string) => t.slice(0, 4);
-const isinSuffix = (t: string) => (/11$/.test(t) ? (isFii(t) ? 'CTF' : 'CDAM') : /3$/.test(t) ? 'ACNOR' : /4$/.test(t) ? 'ACNPR' : /5$/.test(t) ? 'ACNPA' : /6$/.test(t) ? 'ACNPB' : '');
+const isinSuffix = (t: string) => (/11$/.test(t) ? (isFii(t) || isEtfFund(t) ? 'CTF' : 'CDAM') : /3$/.test(t) ? 'ACNOR' : /4$/.test(t) ? 'ACNPR' : /5$/.test(t) ? 'ACNPA' : /6$/.test(t) ? 'ACNPB' : '');
 const mapLabel = (l: string): CalendarItem['type'] | null => {
   const s = l.toUpperCase();
   if (s.includes('JRS') || s.includes('JUROS')) return 'jcp';
@@ -89,9 +90,9 @@ const mapLabel = (l: string): CalendarItem['type'] | null => {
 const codeCVM: Record<string, string> = {};
 for (const t of stocks) {
   try {
-    const fii = isFii(t);
+    const fii = isFii(t) || isEtfFund(t);
     const url = fii
-      ? `https://sistemaswebb3-listados.b3.com.br/fundsProxy/fundsCall/GetListedSupplementFunds/${b64({ cnpj: '0', identifierFund: code4(t), typeFund: 7 })}`
+      ? `https://sistemaswebb3-listados.b3.com.br/fundsProxy/fundsCall/GetListedSupplementFunds/${b64({ cnpj: '0', identifierFund: code4(t), typeFund: isEtfFund(t) ? 20 : 7 })}`
       : `https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/${b64({ issuingCompany: code4(t), language: 'pt-br' })}`;
     const raw = await getJson(url);
     const d = Array.isArray(raw) ? raw[0] : raw;
@@ -229,11 +230,11 @@ for (const t of stocks) {
       .map((x: any) => ({ dataCom: dataComFromEx(new Date(x.date * 1000 - 3 * 3600 * 1000).toISOString().slice(0, 10)), value: Math.round(x.amount * 1e8) / 1e8 }))
       .filter((x) => x.value > 0 && x.dataCom < b3Start);
     out.dividends[t] = [
-      ...yahoo.map((x) => ({ exDate: x.dataCom, value: x.value, type: isFii(t) ? 'rendimento' : 'dividendo', source: 'Yahoo Finance (fallback; data-com = pregão anterior à data-ex; tipo não informado)' })),
+      ...yahoo.map((x) => ({ exDate: x.dataCom, value: x.value, type: isFii(t) || isEtfFund(t) ? 'rendimento' : 'dividendo', source: 'Yahoo Finance (fallback; data-com = pregão anterior à data-ex; tipo não informado)' })),
       ...b3.filter((x) => x.type !== 'amortizacao' || isFii(t)).map((x) => ({ exDate: x.dataCom, value: x.perUnit, type: x.type, payDate: x.payDate, source: 'B3' })),
     ].sort((a, b) => a.exDate.localeCompare(b.exDate));
     // para o lançamento automático: completa o calendário com o Yahoo antes da janela da B3 (confiabilidade estimada)
-    out.calendar[t] = [...yahoo.map((x) => ({ type: isFii(t) ? 'rendimento' : 'dividendo', perUnit: x.value, dataCom: x.dataCom, dataEx: addBusinessDays(x.dataCom, 1), payDate: null, source: 'Yahoo Finance (fallback)', collectedAt: now })), ...b3];
+    out.calendar[t] = [...yahoo.map((x) => ({ type: isFii(t) || isEtfFund(t) ? 'rendimento' : 'dividendo', perUnit: x.value, dataCom: x.dataCom, dataEx: addBusinessDays(x.dataCom, 1), payDate: null, source: 'Yahoo Finance (fallback)', collectedAt: now })), ...b3];
   } catch (e: any) {
     err(`Yahoo ${t}: ${e.message}`);
     if (closes[t]) out.quotes[t] = { price: closes[t].price, time: closes[t].date + 'T18:00:00.000Z', source: 'B3 (COTAHIST)' };

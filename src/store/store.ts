@@ -5,7 +5,7 @@ import type { Asset, AuditEntry, Distribution, Fundamentals, ImportBatch, Macro,
 import { TX_LABEL } from '../domain/types';
 import { activeTransactions, assignFingerprints, fingerprintBase, liveFingerprints, migrateTransactions, normalizeTx, uniqueFingerprints } from '../domain/ledger';
 import type { AutoPlan, Conciliation } from '../domain/calc/proventos';
-import { defaultMacro, defaultSettings, seedAssets } from '../domain/seed';
+import { defaultMacro, defaultSettings, seedAssets, SEED_ADDITIONS } from '../domain/seed';
 import { todayISO, uid } from '../domain/util';
 
 // IndexedDB (fallback em localStorage; sem nenhum dos dois, como em janela privada restrita, segue só em memória)
@@ -334,8 +334,16 @@ export const useStore = create<State>()(
         const settings: Settings = ps
           ? { ...d, ...ps, profile: { ...d.profile, ...ps.profile }, limits: { ...d.limits, ...ps.limits }, thesisRules: { ...d.thesisRules, ...ps.thesisRules }, scoring: { ...d.scoring, ...ps.scoring }, allocator: { ...d.allocator, ...ps.allocator }, integrations: { ...d.integrations, ...ps.integrations }, weights: { ...d.weights, ...ps.weights }, scenarios: { ...d.scenarios, ...ps.scenarios }, tax: { ...d.tax, ...ps.tax }, dpa: { ...d.dpa, ...ps.dpa }, limits360: { ...d.limits360, ...ps.limits360 }, sell: { ...d.sell, ...ps.sell }, bands: ps.bands && 'margin' in ps.bands ? ps.bands : d.bands }
           : current.settings;
-        const assets = p.assets || current.assets;
-        return { ...current, ...p, settings, transactions: migrateTransactions(p.transactions || [], assets), audit: p.audit || [], imports: p.imports || [], conciliations: p.conciliations || [] };
+        let assets = p.assets || current.assets;
+        // ativos novos da lista padrão (ex.: SPYI11): acrescentados UMA vez; se você remover, não volta
+        if (p.assets) {
+          const done = new Set(settings.seedAdded || []);
+          const have = new Set(assets.map((a) => a.ticker));
+          const add = seedAssets().filter((a) => SEED_ADDITIONS.includes(a.ticker) && !done.has(a.ticker) && !have.has(a.ticker));
+          if (add.length) assets = [...assets, ...add];
+          settings.seedAdded = [...new Set([...(settings.seedAdded || []), ...SEED_ADDITIONS])];
+        }
+        return { ...current, ...p, settings, assets, transactions: migrateTransactions(p.transactions || [], assets), audit: p.audit || [], imports: p.imports || [], conciliations: p.conciliations || [] };
       },
       // Migração de esquema reversível: guarda uma cópia integral do estado ANTES de migrar
       // (chave `radar-backup-pre-v<versão>` no IndexedDB), restaurável em Dados & integrações.

@@ -38,8 +38,13 @@ export interface ProvTax {
  * IR de um provento isolado. Dividendos dependem do total do mês por empresa:
  * use `dividendMonthlyIR` para ratear o imposto entre os pagamentos do mês.
  */
-export function provTax(type: TxType, gross: Decimal.Value, rules: TaxRules, opts: { fiiExempt?: boolean } = {}): ProvTax {
+export function provTax(type: TxType, gross: Decimal.Value, rules: TaxRules, opts: { fiiExempt?: boolean; etfRate?: number | null } = {}): ProvTax {
   const g = D(gross);
+  // ETF de renda variável que distribui: IR retido na fonte sobre o rendimento (15% para pessoa física, conforme gestora e B3)
+  if (opts.etfRate !== undefined && opts.etfRate !== null && (type === 'rendimento' || type === 'dividendo')) {
+    const ir = g.times(opts.etfRate).dividedBy(100);
+    return { gross: g, ir, net: g.minus(ir), rule: `ETF que distribui: IR de ${opts.etfRate}% retido na fonte sobre o rendimento.` };
+  }
   if (type === 'jcp') {
     const ir = g.times(rules.jcpRate).dividedBy(100); // exato; o valor retido em cada pagamento é arredondado a centavos no lançamento
     return { gross: g, ir, net: g.minus(ir), rule: TAX_REFS.jcp };

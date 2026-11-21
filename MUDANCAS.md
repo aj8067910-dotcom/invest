@@ -197,6 +197,14 @@ Armazenamento e cálculo já usavam a quantidade exata (decimal); a mudança é 
 | Central de aportes → Minha escolha | Preço = cotação; coluna de rendimento | Coluna "Preço de compra" editável (vem com a cotação; mostra a diferença e "usar cotação"); quantidade, custo, renda e registro usam o preço informado; coluna de rendimento removida |
 | Central de aportes → Projeção de renda do aporte | Cotação fixa | "Preço de compra" editável |
 
+## SPYI11 na lista de ETFs
+
+| Módulo | Antes | Depois | Fundamento |
+|---|---|---|---|
+| Lista de ativos (ETFs, watchlist) | — | SPYI11 — Buena Vista US High Income ETF: feeder do NEOS SPYI (S&P 500 + venda de opções de compra), taxa 0,83% a.a., rendimentos mensais; entra uma vez na lista de quem já usa o app (removido, não volta) | Gestora e B3 |
+| Robô | ETFs sem proventos | ETFs que distribuem (`etfsQueDistribuem` em `market/tickers.json`) buscam rendimentos na lista de ETFs da B3; SPYI11: cotação + 28 rendimentos | B3 |
+| IR dos rendimentos de ETF | — | 15% retido na fonte (pessoa física), editável no cadastro do ativo; proventos automáticos, projeção e YoC usam o líquido | Gestora e B3; confirmar no informe de rendimentos |
+
 ## Testes de aceitação
 
 `src/domain/aceitacao.test.ts` cobre os 18 casos da especificação e mais: idempotência dos proventos automáticos, retificação, limite de R$ 50 mil por empresa e livro só de inclusão. Total: 59 testes passando (`npm test`).

@@ -113,6 +113,14 @@ const defs: SeedDef[] = [
     extra: { etf: { index: 'S&P 500', geography: 'EUA', sectorFocus: 'Large caps EUA', fee: null, liquidity: null, exposureTags: ['EUA'], overlapTickers: [], distributes: false } },
   },
   {
+    ticker: 'SPYI11', name: 'Buena Vista US High Income ETF', cls: 'etf', status: 'watchlist', sector: 'Índice EUA', issuer: 'SPYI11', intl: true, usd: true,
+    extra: {
+      etf: { index: 'S&P 500 + venda de opções de compra (feeder do NEOS SPYI)', geography: 'EUA', sectorFocus: 'Large caps EUA, renda com opções', fee: 0.83, liquidity: null, exposureTags: ['EUA'], overlapTickers: [], distributes: true },
+      etfIncomeTax: 15,
+      notes: 'Fundo alimentador (≥ 95% em cotas do NEOS S&P 500 High Income ETF): ações do S&P 500 com venda coberta de opções de compra. Distribui rendimentos mensais (proventos gerados pelas opções, não garantidos); a venda de opções limita a alta. Gestão Buena Vista, administração Vórtx DTVM; negociado na B3 desde 14/11/2023. Rendimentos com IR de 15% retido na fonte (pessoa física), segundo a gestora e a B3 — confirme no informe de rendimentos.',
+    },
+  },
+  {
     ticker: 'NASD11', name: 'ETF Nasdaq-100', cls: 'etf', status: 'watchlist', sector: 'Índice EUA', issuer: 'NASD11', intl: true, usd: true,
     extra: { etf: { index: 'Nasdaq-100', geography: 'EUA', sectorFocus: 'Tecnologia / growth EUA', fee: null, liquidity: null, exposureTags: ['EUA', 'Tecnologia EUA'], overlapTickers: [], distributes: false } },
   },
@@ -149,6 +157,9 @@ export function makeAsset(p: Partial<Asset> & Pick<Asset, 'ticker' | 'class'>): 
     ...p,
   };
 }
+
+/** Ativos acrescentados à lista padrão depois da primeira versão: entram uma vez na carteira já existente. */
+export const SEED_ADDITIONS = ['SPYI11'];
 
 export function seedAssets(): Asset[] {
   return defs.map((d) =>

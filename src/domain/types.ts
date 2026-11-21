@@ -178,6 +178,7 @@ export interface Asset {
   // ── preço-teto
   dpaRef?: DpaRef | null; // DPA de referência deste ativo (null → padrão da classe)
   fiiTaxExempt?: boolean; // FII cumpre os requisitos de isenção (Lei 14.754/2023)
+  etfIncomeTax?: number | null; // ETF que distribui: IR retido na fonte sobre os rendimentos (%); vazio = 15%
   // ── watchlist
   sellTarget?: number | null; // meta pessoal de rentabilidade para vender (% de retorno total)
   interestPrice?: number | null; // preço de interesse manual
@@ -478,6 +479,7 @@ export interface Limits360 {
 }
 
 export interface Settings {
+  seedAdded?: string[]; // ativos acrescentados à lista padrão depois da primeira instalação (já oferecidos)
   profile: {
     name: string;
     startDate: string;

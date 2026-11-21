@@ -32,6 +32,7 @@
     "PVBI11",
     "GARE11",
     "IVVB11",
+    "SPYI11",
     "NASD11"
   ],
   "crypto": {
@@ -64,5 +65,9 @@
   "units": {
     "TAEE11": 3
   },
-  "_comment_units": "Units: quantas ações cada unit representa (TAEE11 = 1 ON + 2 PN)."
+  "_comment_units": "Units: quantas ações cada unit representa (TAEE11 = 1 ON + 2 PN).",
+  "etfsQueDistribuem": [
+    "SPYI11"
+  ],
+  "_comment_etfs": "ETFs que pagam rendimentos: os proventos vêm da B3 (lista de ETFs, typeFund 20)."
 }

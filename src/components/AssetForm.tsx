@@ -100,6 +100,17 @@ export function AssetForm({ initial, onSave, onCancel, isNew }: { initial: Asset
             <Field label="Tags de exposição" hint="Separadas por vírgula; tags iguais indicam sobreposição">
               <input value={a.etf.exposureTags.join(', ')} onChange={(e) => up({ etf: { ...a.etf!, exposureTags: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) } })} />
             </Field>
+            <Field label="Distribui rendimentos">
+              <select value={a.etf.distributes ? 'sim' : 'nao'} onChange={(e) => up({ etf: { ...a.etf!, distributes: e.target.value === 'sim' } })}>
+                <option value="nao">não (reinveste)</option>
+                <option value="sim">sim</option>
+              </select>
+            </Field>
+            {a.etf.distributes && (
+              <Field label="IR retido nos rendimentos" hint="ETF de renda variável: 15% na fonte (pessoa física). Confira no informe de rendimentos">
+                <NumInput value={a.etfIncomeTax ?? 15} suffix="%" onChange={(v) => up({ etfIncomeTax: v })} />
+              </Field>
+            )}
             <Field label="Ações locais no índice" wide hint="Tickers da carteira contidos no índice (sobreposição)">
               <input value={a.etf.overlapTickers.join(', ')} onChange={(e) => up({ etf: { ...a.etf!, overlapTickers: e.target.value.toUpperCase().split(',').map((x) => x.trim()).filter(Boolean) } })} />
             </Field>

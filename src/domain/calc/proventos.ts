@@ -95,7 +95,7 @@ export function planAutoProventos(assets: Asset[], txs: Transaction[], calendar:
       const eligible = D(positionAt(a, list, it.dataCom));
       if (eligible.lessThanOrEqualTo(0)) continue;
       const gross = cents(eligible.times(D(it.perUnit)));
-      const tx = provTax(it.type, gross, s.tax, { fiiExempt: a.fiiTaxExempt });
+      const tx = provTax(it.type, gross, s.tax, { fiiExempt: a.fiiTaxExempt, etfRate: a.class === 'etf' ? a.etfIncomeTax ?? 15 : undefined });
       const ir = cents(tx.ir); // dinheiro efetivamente retido: centavos
       computed.push({ asset: a, item: it, eligible, gross, ir, net: gross.minus(ir), rule: tx.rule, key: autoKey(a.ticker, it.type, it.dataCom, it.payDate), estPay: estimatedPayDate(a, it, asOf) });
     }
